@@ -79,59 +79,10 @@ html, body, [class*="css"] {
 }
 .block-container {
     max-width: 1380px;
-    padding-top: 0.8rem;
+    padding-top: 2rem;
     padding-bottom: 3.5rem;
 }
-/* TOP NAVIGATION */
-.navbar {
-    height: 72px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 0 -1rem 28px -1rem;
-    padding: 0 28px;
-    background: rgba(255,255,255,.94);
-    border-bottom: 1px solid var(--border);
-    backdrop-filter: blur(12px);
-}
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 190px;
-}
-.logo-mark {
-    width: 34px;
-    height: 34px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    background: linear-gradient(135deg, #1557e8, #4f7ff0);
-    font-family: 'Plus Jakarta Sans';
-    font-weight: 800;
-    box-shadow: 0 7px 18px rgba(21,87,232,.20);
-}
-.logo-name {
-    font-family: 'Plus Jakarta Sans';
-    font-weight: 800;
-    font-size: 18px;
-    letter-spacing: -.04em;
-    color: #182033;
-}
-.logo-sub {
-    color: #8b97a8;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: .09em;
-    text-transform: uppercase;
-}
-.nav-copy {
-    color: #5f6d80;
-    font-size: 13px;
-    font-weight: 600;
-}
+
 /* PAGE TITLE */
 .page-head {
     display: flex;
@@ -150,7 +101,7 @@ html, body, [class*="css"] {
 }
 .page-title {
     font-family: 'Plus Jakarta Sans';
-    font-size: 30px;
+    font-size: 32px;
     line-height: 1.12;
     letter-spacing: -.045em;
     color: #151c2b;
@@ -158,7 +109,7 @@ html, body, [class*="css"] {
 }
 .page-description {
     color: var(--muted);
-    font-size: 13px;
+    font-size: 14px;
     margin-top: 6px;
 }
 
@@ -355,7 +306,7 @@ html, body, [class*="css"] {
 .signal-badge { border-radius: 7px; padding: 5px 8px; font-size: 9px; font-weight: 800; }
 
 /* ============================================================
-   UX/UI MODERN SEGMENTED CONTROL TABS (FORZADO CON P Y SPAN)
+   UX/UI MODERN SEGMENTED CONTROL TABS
    ============================================================ */
 .stTabs {
     margin-top: 15px !important;
@@ -429,8 +380,6 @@ html, body, [class*="css"] {
 @media (max-width: 900px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }
     .params-grid { grid-template-columns: repeat(2, 1fr); }
-    .navbar { padding: 0 15px; }
-    .nav-copy { display: none; }
 }
 </style>
 """,
@@ -494,28 +443,6 @@ else:
     activas = contar_estado(df_hist, "ACTIVA")
     total_cerradas = exitos + fallos
     win_rate = (exitos / total_cerradas * 100) if total_cerradas else 0
-
-
-# ============================================================
-# TOP NAV
-# ============================================================
-render_html(
-    f"""
-<div class="navbar">
-    <div class="logo">
-        <div class="logo-mark">A</div>
-        <div>
-            <div class="logo-name">alura</div>
-            <div class="logo-sub">quant intelligence</div>
-        </div>
-    </div>
-    <div class="nav-copy">
-        Investment intelligence · Mercado Continuo
-    </div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 
 # ============================================================
