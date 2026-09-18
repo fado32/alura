@@ -239,7 +239,7 @@ def generar_comentario_ia_variado(candidato):
         f"Eres un analista cuantitativo de mercados en Alura Quant. Tu objetivo es hacer comentarios breves, "
         f"directos y variados. Hoy debes redactar el comentario usando este estilo específico: {enfoque_nombre}.\n"
         f"Instrucción de estilo: {enfoque_instruccion}\n\n"
-        f"Reglas strictly:\n"
+        f"Reglas estrictas:\n"
         f"- Escribe en un único párrafo conciso (máximo 3 frases).\n"
         f"- No uses siempre la misma estructura formal o saludos prefabricados.\n"
         f"- Incluye números concretos (volumen, entradas o ratios) en tu argumento."
@@ -407,17 +407,29 @@ def auditar_y_mostrar_estadisticas():
 
 
 # ==========================================
-# SUBIDA AUTOMÁTICA A GITHUB
+# SUBIDA AUTOMÁTICA A GITHUB Y STREAMLIT
 # ==========================================
 def subir_a_github():
     try:
-        subprocess.run(["git", "add", ARCHIVO_HISTORIAL], check=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Auto-update alertas desde local"],
-            check=True,
+        # 1. Añadimos todos los archivos modificados en la carpeta (app.py, bot.py, CSV, etc.)
+        subprocess.run(["git", "add", "."], check=True)
+
+        # 2. Comprobamos si existen cambios pendientes de commit
+        status = subprocess.run(
+            ["git", "status", "--porcelain"], capture_output=True, text=True
         )
-        subprocess.run(["git", "push", "origin", "main"], check=True)
-        print("🚀 ¡Datos subidos con éxito a GitHub y Streamlit Cloud!")
+
+        if status.stdout.strip():
+            # Hay cambios pendientes: realizamos commit y push
+            subprocess.run(
+                ["git", "commit", "-m", "Auto-update alertas y codigo desde local"],
+                check=True,
+            )
+            subprocess.run(["git", "push", "origin", "main"], check=True)
+            print("🚀 ¡Cambios y datos subidos con éxito a GitHub y Streamlit Cloud!")
+        else:
+            print("💤 Sin cambios nuevos. Todo al día.")
+
     except Exception as e:
         print(f"ℹ️ Nota de Git: {e}")
 
