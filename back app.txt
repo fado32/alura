@@ -74,8 +74,8 @@ html, body, [class*="css"] {
         var(--bg);
     color: var(--text);
 }
-#MainMenu, footer {
-    visibility: hidden;
+#MainMenu, footer, section[data-testid="stSidebar"] {
+    display: none !important;
 }
 .block-container {
     max-width: 1380px;
@@ -354,26 +354,6 @@ html, body, [class*="css"] {
 .signal-detail { color: #909cac; font-size: 10px; margin-top: 3px; }
 .signal-badge { border-radius: 7px; padding: 5px 8px; font-size: 9px; font-weight: 800; }
 
-/* STATUS / INFO */
-.status-live {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    color: #147f43;
-    background: #effaf4;
-    border: 1px solid #d8f0e2;
-    border-radius: 999px;
-    padding: 7px 11px;
-    font-size: 10px;
-    font-weight: 800;
-}
-.status-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #18a957;
-}
-
 /* TABS — SUBMENÚS CON FUENTE MÁS GRANDE */
 .stTabs { margin-top: 4px; }
 .stTabs [data-baseweb="tab-list"] {
@@ -496,56 +476,10 @@ render_html(
     <div class="nav-copy">
         Investment intelligence · Mercado Continuo
     </div>
-    <div class="status-live">
-        <span class="status-dot"></span>
-        SISTEMA ACTIVO
-    </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
-
-
-# ============================================================
-# SIDEBAR — SIMULATION CONTROLS
-# ============================================================
-with st.sidebar:
-    st.markdown("### Simulación")
-    st.caption("Ajusta el escenario de rendimiento.")
-    capital_inicial = st.number_input(
-        "Capital inicial (€)",
-        min_value=1000.0,
-        value=10000.0,
-        step=1000.0,
-        format="%.0f",
-    )
-    capital_por_alerta = st.number_input(
-        "Capital por alerta (€)",
-        min_value=100.0,
-        value=1000.0,
-        step=100.0,
-        format="%.0f",
-    )
-    take_profit_pct = st.number_input(
-        "Take profit fallback (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=10.0,
-        step=0.5,
-        format="%.1f",
-    )
-    stop_loss_pct = st.number_input(
-        "Stop loss fallback (%)",
-        min_value=0.0,
-        max_value=100.0,
-        value=4.0,
-        step=0.5,
-        format="%.1f",
-    )
-    st.divider()
-    if st.button("↻ Actualizar datos", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
 
 
 # ============================================================
@@ -626,6 +560,11 @@ tab_resumen, tab_cartera, tab_historial = st.tabs(["Resumen", "Cartera", "Histó
 with tab_resumen:
     col_grafico, col_desglose = st.columns([1.2, 0.8], gap="large")
 
+    capital_inicial = 10000.0
+    capital_por_alerta = 1000.0
+    take_profit_pct = 10.0
+    stop_loss_pct = 4.0
+
     df_sim = df_hist.copy()
     if "Fecha" in df_sim.columns:
         df_sim = df_sim.dropna(subset=["Fecha"]).sort_values("Fecha")
@@ -635,10 +574,8 @@ with tab_resumen:
     beneficios_curva = []
 
     if not df_sim.empty and "Fecha" in df_sim.columns:
-        # Formatear la fecha para que la unidad mínima sea el DÍA (YYYY-MM-DD)
         df_sim["Fecha_Dia"] = df_sim["Fecha"].dt.strftime("%Y-%m-%d")
         
-        # Agrupar operaciones por día
         for dia, grupo in df_sim.groupby("Fecha_Dia"):
             beneficio_dia = 0.0
             for _, row in grupo.iterrows():
@@ -681,7 +618,7 @@ with tab_resumen:
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div>
-                    <div class="card-title">Beneficio Neto Acumulado (€)</div>
+                    <div class="card-title">Beneficio Acum. (€)</div>
                     <div class="card-subtitle">Evolución diaria del rendimiento sobre lo invertido</div>
                 </div>
                 <div style="text-align:right;">
@@ -703,7 +640,6 @@ with tab_resumen:
                 {"Día": fechas_curva, "Beneficio Neto (€)": beneficios_curva}
             ).set_index("Día")
 
-            # Gráfico de Líneas con unidad diaria
             st.line_chart(df_beneficio, height=330)
         else:
             st.info("Se necesitan más fechas registradas para trazar el gráfico de rendimiento.")
@@ -803,7 +739,6 @@ with tab_cartera:
             ticker = row.get("Ticker", "")
             sector = row.get("Sector", "Mercado Continuo")
 
-            # Obtención del precio actual en tiempo real
             precio_actual_val = obtener_precio_actual(ticker)
             if precio_actual_val:
                 precio_actual_str = f"{precio_actual_val:.2f} €"

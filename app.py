@@ -162,7 +162,7 @@ html, body, [class*="css"] {
     margin-top: 6px;
 }
 
-/* KPI CARDS (4 COLUMNAS - SIN EN RADAR) */
+/* KPI CARDS (4 COLUMNAS) */
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -225,7 +225,7 @@ html, body, [class*="css"] {
     margin-top: 4px;
 }
 
-/* CARTERA CARDS CON PRECIO ACTUAL */
+/* CARTERA CARDS */
 .asset-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -354,29 +354,38 @@ html, body, [class*="css"] {
 .signal-detail { color: #909cac; font-size: 10px; margin-top: 3px; }
 .signal-badge { border-radius: 7px; padding: 5px 8px; font-size: 9px; font-weight: 800; }
 
-/* TABS — SUBMENÚS CON FUENTE MÁS GRANDE */
-.stTabs { margin-top: 4px; }
+/* ============================================================
+   UX/UI MODERN SEGMENTED CONTROL TABS
+   ============================================================ */
+.stTabs { margin-top: 8px; }
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-    background: transparent;
-    border-bottom: 1px solid #e3eaf3;
-    padding: 0;
-    margin-bottom: 22px;
+    gap: 6px;
+    background: #e2ebf5;
+    border-radius: 16px;
+    padding: 6px;
+    border: 1px solid #d8e2ee;
+    margin-bottom: 26px;
+    display: inline-flex;
 }
 .stTabs [data-baseweb="tab"] {
-    color: #64748b;
+    color: #556578;
     background: transparent;
     border: 0;
-    border-radius: 0;
+    border-radius: 12px;
     font-size: 16px !important;
-    font-weight: 700 !important;
-    padding: 12px 20px;
+    font-weight: 800 !important;
+    padding: 12px 28px !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.stTabs [data-baseweb="tab"]:hover { color: #1557e8; background: transparent; }
+.stTabs [data-baseweb="tab"]:hover {
+    color: #1557e8;
+    background: rgba(255, 255, 255, 0.6);
+}
 .stTabs [aria-selected="true"] {
-    color: var(--blue) !important;
-    background: transparent !important;
-    border-bottom: 3px solid var(--blue) !important;
+    color: #1557e8 !important;
+    background: #ffffff !important;
+    box-shadow: 0 4px 14px rgba(21, 87, 232, 0.15) !important;
+    border-bottom: 0 !important;
 }
 
 /* FOOTER */
@@ -483,7 +492,7 @@ render_html(
 
 
 # ============================================================
-# PAGE HEADER & KPI STRIP (SIN "EN RADAR")
+# PAGE HEADER & KPI STRIP
 # ============================================================
 render_html(
     """
@@ -549,13 +558,15 @@ if df_hist.empty:
 
 
 # ============================================================
-# SUBMENÚ CON LETRAS MÁS GRANDES
+# NAVEGACIÓN PRINCIPAL (ICONOS Y ALTA ACCESIBILIDAD)
 # ============================================================
-tab_resumen, tab_cartera, tab_historial = st.tabs(["Resumen", "Cartera", "Histórico"])
+tab_resumen, tab_cartera, tab_historial = st.tabs(
+    ["📊  Resumen", "💼  Cartera", "📜  Histórico"]
+)
 
 
 # ============================================================
-# 1. PESTAÑA RESUMEN (Gráfico de Líneas de Beneficio Neto por Día)
+# 1. PESTAÑA RESUMEN
 # ============================================================
 with tab_resumen:
     col_grafico, col_desglose = st.columns([1.2, 0.8], gap="large")
@@ -575,7 +586,7 @@ with tab_resumen:
 
     if not df_sim.empty and "Fecha" in df_sim.columns:
         df_sim["Fecha_Dia"] = df_sim["Fecha"].dt.strftime("%Y-%m-%d")
-        
+
         for dia, grupo in df_sim.groupby("Fecha_Dia"):
             beneficio_dia = 0.0
             for _, row in grupo.iterrows():
@@ -596,8 +607,16 @@ with tab_resumen:
                     else precio_ent * (1 + take_profit_pct / 100)
                 )
 
-                pct_ganancia = (precio_tp - precio_ent) / precio_ent if precio_ent > 0 else 0.10
-                pct_pérdida = (precio_ent - precio_sl) / precio_ent if precio_ent > 0 else 0.04
+                pct_ganancia = (
+                    (precio_tp - precio_ent) / precio_ent
+                    if precio_ent > 0
+                    else 0.10
+                )
+                pct_pérdida = (
+                    (precio_ent - precio_sl) / precio_ent
+                    if precio_ent > 0
+                    else 0.04
+                )
 
                 if "OBJETIVO_CUMPLIDO" in estado_op:
                     beneficio_dia += capital_por_alerta * pct_ganancia
@@ -642,7 +661,9 @@ with tab_resumen:
 
             st.line_chart(df_beneficio, height=330)
         else:
-            st.info("Se necesitan más fechas registradas para trazar el gráfico de rendimiento.")
+            st.info(
+                "Se necesitan más fechas registradas para trazar el gráfico de rendimiento."
+            )
 
     with col_desglose:
         render_html(
@@ -677,7 +698,9 @@ with tab_resumen:
         rows_recent_html = []
         for _, row in df_recent.iterrows():
             tipo, estado_icono, label = estado_visual(row.get("Estado", "—"))
-            icono = row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
+            icono = (
+                row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
+            )
             empresa = row.get("Empresa", row.get("Ticker", "Activo"))
             ticker = row.get("Ticker", "")
 
@@ -714,7 +737,7 @@ with tab_resumen:
 
 
 # ============================================================
-# 2. PESTAÑA CARTERA (CON PRECIO ACTUAL EN LA MISMA FILA)
+# 2. PESTAÑA CARTERA
 # ============================================================
 with tab_cartera:
     df_activas = df_hist[
@@ -734,7 +757,9 @@ with tab_cartera:
         )
     else:
         for _, row in df_activas.iterrows():
-            icono = row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
+            icono = (
+                row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
+            )
             empresa = row.get("Empresa", row.get("Ticker", "Activo"))
             ticker = row.get("Ticker", "")
             sector = row.get("Sector", "Mercado Continuo")
