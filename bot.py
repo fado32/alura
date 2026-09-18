@@ -140,16 +140,53 @@ activos = list(MAESTRO_ACTIVOS.keys())
 
 def safe_float(value, default=None):
     try:
-        if value is None or pd.isna(value):
+        if value is None:
             return default
+
+        # Si por alguna razón llega una Series/array, no es un escalar válido.
+        if isinstance(value, (pd.Series, pd.DataFrame)):
+            return default
+
+        missing = pd.isna(value)
+        if isinstance(missing, (bool,)):
+            if missing:
+                return default
+
         return float(value)
     except (TypeError, ValueError):
         return default
 
 
 def normalizar_columnas(data):
+    """
+    Normaliza columnas de yfinance tanto si vienen como columnas simples
+    como si vienen en MultiIndex. Evita que data["Close"] devuelva una
+    Series en vez de un escalar al analizar la última fila.
+    """
+    data = data.copy()
+
     if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
+        # Buscar el nivel que contiene OHLCV.
+        niveles_validos = {"Open", "High", "Low", "Close", "Volume"}
+        elegido = None
+
+        for nivel in range(data.columns.nlevels):
+            valores = set(str(x) for x in data.columns.get_level_values(nivel))
+            if niveles_validos.intersection(valores):
+                elegido = nivel
+                break
+
+        if elegido is not None:
+            data.columns = data.columns.get_level_values(elegido)
+        else:
+            data.columns = [
+                "_".join(str(x) for x in col if str(x) != "None")
+                for col in data.columns
+            ]
+
+    # Si por cualquier motivo hay columnas duplicadas, conservar la primera.
+    data = data.loc[:, ~data.columns.duplicated(keep="first")]
+
     return data
 
 
@@ -564,19 +601,30 @@ def analizar_activo(ticker_symbol, benchmark_data):
 
         ultimo = data.iloc[-1]
 
-        precio = safe_float(ultimo["Close"])
-        ema20 = safe_float(ultimo["EMA_20"])
-        ema50 = safe_float(ultimo["EMA_50"])
-        ema200 = safe_float(ultimo["EMA_200"])
-        rsi = safe_float(ultimo["RSI"])
-        atr = safe_float(ultimo["ATR_14"])
-        volumen = safe_float(ultimo["Volume"])
-        volumen_medio = safe_float(ultimo["Vol_Mean_20"])
-        eur_vol_medio = safe_float(ultimo["Avg_EUR_Vol_20"])
+        precio = safe_float(ultimo.get("Close"))
+        ema20 = safe_float(ultimo.get("EMA_20"))
+        ema50 = safe_float(ultimo.get("EMA_50"))
+        ema200 = safe_float(ultimo.get("EMA_200"))
+        rsi = safe_float(ultimo.get("RSI"))
+        atr = safe_float(ultimo.get("ATR_14"))
+        volumen = safe_float(ultimo.get("Volume"))
+        volumen_medio = safe_float(ultimo.get("Vol_Mean_20"))
+        eur_vol_medio = safe_float(ultimo.get("Avg_EUR_Vol_20"))
 
-        mom20 = safe_float(ultimo["Mom_20"], 0)
-        mom60 = safe_float(ultimo["Mom_60"], 0)
-        mom120 = safe_float(ultimo["Mom_120"], 0)
+        mom20 = safe_float(ultimo.get("Mom_20"))
+        mom60 = safe_float(ultimo.get("Mom_60"))
+        mom120 = safe_float(ultimo.get("Mom_120"))
+
+        # No puntuar una fila incompleta. Esto evita comparaciones del tipo
+        # None > float y evita generar señales con indicadores inválidos.
+        if any(
+            x is None
+            for x in [
+                precio, ema20, ema50, ema200, rsi, atr, volumen,
+                volumen_medio, eur_vol_medio, mom20, mom60, mom120
+            ]
+        ):
+            return None
 
         prev_high_50 = safe_float(ultimo["Prev_High_50"])
         breakout = (
@@ -584,9 +632,10 @@ def analizar_activo(ticker_symbol, benchmark_data):
             and precio > prev_high_50
         )
 
-        if not all(
-            x is not None
-            for x in [precio, ema20, ema50, ema200, rsi, atr, volumen]
+        if any(
+            x is None
+            for x in [precio, ema20, ema50, ema200, rsi, atr, volumen,
+                      volumen_medio, eur_vol_medio, mom20, mom60, mom120]
         ):
             return None
 
@@ -599,8 +648,8 @@ def analizar_activo(ticker_symbol, benchmark_data):
         atr_pct = (atr / precio) * 100 if precio > 0 else None
 
         # Relative Strength contra el benchmark.
-        benchmark_ret_60 = benchmark_data.get("ret60")
-        asset_ret_60 = mom60
+        benchmark_ret_60 = safe_float(benchmark_data.get("ret60"))
+        asset_ret_60 = safe_float(mom60, 0.0)
 
         if benchmark_ret_60 is not None:
             relative_strength = asset_ret_60 - benchmark_ret_60
@@ -734,7 +783,9 @@ def analizar_activo(ticker_symbol, benchmark_data):
         }
 
     except Exception as e:
-        print(f"⚠️ Error analizando {ticker_symbol}: {e}")
+        print(
+            f"⚠️ Error analizando {ticker_symbol}: {type(e).__name__}: {e}"
+        )
         return None
 
 
