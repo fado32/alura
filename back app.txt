@@ -312,7 +312,6 @@ html, body, [class*="css"] {
     margin-top: 15px !important;
 }
 
-/* Contenedor principal de pestañas */
 .stTabs [data-baseweb="tab-list"] {
     gap: 10px !important;
     background: #e2ebf5 !important;
@@ -323,7 +322,6 @@ html, body, [class*="css"] {
     display: inline-flex !important;
 }
 
-/* Botón base */
 .stTabs button[data-baseweb="tab"] {
     height: auto !important;
     color: #475569 !important;
@@ -334,7 +332,6 @@ html, body, [class*="css"] {
     transition: all 0.2s ease !important;
 }
 
-/* Forzar tamaño en el elemento de texto interno (p / span) */
 .stTabs button[data-baseweb="tab"] p,
 .stTabs button[data-baseweb="tab"] span,
 .stTabs [data-baseweb="tab"] * {
@@ -346,13 +343,11 @@ html, body, [class*="css"] {
     line-height: 1.2 !important;
 }
 
-/* Hover */
 .stTabs button[data-baseweb="tab"]:hover {
     color: #1557e8 !important;
     background: rgba(255, 255, 255, 0.7) !important;
 }
 
-/* Pestaña activa seleccionada */
 .stTabs button[aria-selected="true"] {
     color: #1557e8 !important;
     background: #ffffff !important;
@@ -512,17 +507,126 @@ if df_hist.empty:
 
 
 # ============================================================
-# NAVEGACIÓN PRINCIPAL
+# NAVEGACIÓN PRINCIPAL (ORDEN: CARTERA -> RESULTADOS -> HISTÓRICO)
 # ============================================================
-tab_resumen, tab_cartera, tab_historial = st.tabs(
-    ["📊  Resumen", "💼  Cartera", "📜  Histórico"]
+tab_cartera, tab_resultados, tab_historial = st.tabs(
+    ["💼  Cartera", "📊  Resultados", "📜  Histórico"]
 )
 
 
 # ============================================================
-# 1. PESTAÑA RESUMEN
+# 1. PESTAÑA CARTERA (VISTA POR DEFECTO)
 # ============================================================
-with tab_resumen:
+with tab_cartera:
+    df_activas = df_hist[
+        df_hist["Estado"].astype(str).str.contains("ACTIVA", na=False)
+    ].copy()
+
+    if df_activas.empty:
+        render_html(
+            """
+        <div class="empty-state">
+            <div class="empty-icon">◌</div>
+            <div class="empty-title">No hay posiciones activas en Cartera</div>
+            <div class="empty-text">Actualmente el radar no mantiene valores en seguimiento activo.</div>
+        </div>
+        """,
+            unsafe_allow_html=True,
+        )
+    else:
+        for _, row in df_activas.iterrows():
+            icono = (
+                row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
+            )
+            empresa = row.get("Empresa", row.get("Ticker", "Activo"))
+            ticker = row.get("Ticker", "")
+            sector = row.get("Sector", "Mercado Continuo")
+
+            precio_actual_val = obtener_precio_actual(ticker)
+            if precio_actual_val:
+                precio_actual_str = f"{precio_actual_val:.2f} €"
+            else:
+                precio_actual_str = "—"
+
+            precio_ent = (
+                f"{row['Precio_Alerta']:.2f} €"
+                if "Precio_Alerta" in row and pd.notna(row["Precio_Alerta"])
+                else "—"
+            )
+            stop_loss = (
+                f"{row['Stop_Loss']:.2f} €"
+                if "Stop_Loss" in row and pd.notna(row["Stop_Loss"])
+                else "—"
+            )
+            take_profit = (
+                f"{row['Take_Profit']:.2f} €"
+                if "Take_Profit" in row and pd.notna(row["Take_Profit"])
+                else "—"
+            )
+            ratio_rr = (
+                f"{row['Ratio_RR']:.1f}x"
+                if "Ratio_RR" in row and pd.notna(row["Ratio_RR"])
+                else "—"
+            )
+
+            analisis_ia = (
+                row.get("Analisis_IA", "Sin análisis disponible.")
+                if pd.notna(row.get("Analisis_IA"))
+                else "Sin análisis disponible."
+            )
+
+            render_html(
+                f"""
+            <div class="asset-card">
+                <div class="asset-header">
+                    <div class="asset-identity">
+                        <div class="asset-icon">{icono}</div>
+                        <div>
+                            <div class="asset-title">{empresa} <span style="color:#8793a4; font-weight:600;">({ticker})</span></div>
+                            <div class="asset-subtitle">{sector}</div>
+                        </div>
+                    </div>
+                    <div class="asset-live-price">
+                        <div class="price-val">{precio_actual_str}</div>
+                        <div class="price-lbl">Precio Actual</div>
+                    </div>
+                </div>
+                
+                <div class="params-grid">
+                    <div class="param-box">
+                        <div class="param-label">Precio Entrada</div>
+                        <div class="param-value">{precio_ent}</div>
+                    </div>
+                    <div class="param-box">
+                        <div class="param-label">Stop Loss</div>
+                        <div class="param-value" style="color:#d94343;">{stop_loss}</div>
+                    </div>
+                    <div class="param-box">
+                        <div class="param-label">Take Profit</div>
+                        <div class="param-value" style="color:#149447;">{take_profit}</div>
+                    </div>
+                    <div class="param-box">
+                        <div class="param-label">Ratio Risk/Reward</div>
+                        <div class="param-value" style="color:#1557e8;">{ratio_rr}</div>
+                    </div>
+                </div>
+                
+                <div class="ai-box">
+                    <strong style="color:#1557e8; display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.05em;">
+                        💡 Tesis del Modelo IA
+                    </strong>
+                    {analisis_ia}
+                </div>
+            </div>
+            """,
+                unsafe_allow_html=True,
+            )
+
+
+# ============================================================
+# 2. PESTAÑA RESULTADOS
+# ============================================================
+with tab_resultados:
     col_grafico, col_desglose = st.columns([1.2, 0.8], gap="large")
 
     capital_inicial = 10000.0
@@ -688,115 +792,6 @@ with tab_resumen:
             + "".join(rows_recent_html)
             + "</div></div>"
         )
-
-
-# ============================================================
-# 2. PESTAÑA CARTERA
-# ============================================================
-with tab_cartera:
-    df_activas = df_hist[
-        df_hist["Estado"].astype(str).str.contains("ACTIVA", na=False)
-    ].copy()
-
-    if df_activas.empty:
-        render_html(
-            """
-        <div class="empty-state">
-            <div class="empty-icon">◌</div>
-            <div class="empty-title">No hay posiciones activas en Cartera</div>
-            <div class="empty-text">Actualmente el radar no mantiene valores en seguimiento activo.</div>
-        </div>
-        """,
-            unsafe_allow_html=True,
-        )
-    else:
-        for _, row in df_activas.iterrows():
-            icono = (
-                row.get("Icono", "📈") if pd.notna(row.get("Icono")) else "📈"
-            )
-            empresa = row.get("Empresa", row.get("Ticker", "Activo"))
-            ticker = row.get("Ticker", "")
-            sector = row.get("Sector", "Mercado Continuo")
-
-            precio_actual_val = obtener_precio_actual(ticker)
-            if precio_actual_val:
-                precio_actual_str = f"{precio_actual_val:.2f} €"
-            else:
-                precio_actual_str = "—"
-
-            precio_ent = (
-                f"{row['Precio_Alerta']:.2f} €"
-                if "Precio_Alerta" in row and pd.notna(row["Precio_Alerta"])
-                else "—"
-            )
-            stop_loss = (
-                f"{row['Stop_Loss']:.2f} €"
-                if "Stop_Loss" in row and pd.notna(row["Stop_Loss"])
-                else "—"
-            )
-            take_profit = (
-                f"{row['Take_Profit']:.2f} €"
-                if "Take_Profit" in row and pd.notna(row["Take_Profit"])
-                else "—"
-            )
-            ratio_rr = (
-                f"{row['Ratio_RR']:.1f}x"
-                if "Ratio_RR" in row and pd.notna(row["Ratio_RR"])
-                else "—"
-            )
-
-            analisis_ia = (
-                row.get("Analisis_IA", "Sin análisis disponible.")
-                if pd.notna(row.get("Analisis_IA"))
-                else "Sin análisis disponible."
-            )
-
-            render_html(
-                f"""
-            <div class="asset-card">
-                <div class="asset-header">
-                    <div class="asset-identity">
-                        <div class="asset-icon">{icono}</div>
-                        <div>
-                            <div class="asset-title">{empresa} <span style="color:#8793a4; font-weight:600;">({ticker})</span></div>
-                            <div class="asset-subtitle">{sector}</div>
-                        </div>
-                    </div>
-                    <div class="asset-live-price">
-                        <div class="price-val">{precio_actual_str}</div>
-                        <div class="price-lbl">Precio Actual</div>
-                    </div>
-                </div>
-                
-                <div class="params-grid">
-                    <div class="param-box">
-                        <div class="param-label">Precio Entrada</div>
-                        <div class="param-value">{precio_ent}</div>
-                    </div>
-                    <div class="param-box">
-                        <div class="param-label">Stop Loss</div>
-                        <div class="param-value" style="color:#d94343;">{stop_loss}</div>
-                    </div>
-                    <div class="param-box">
-                        <div class="param-label">Take Profit</div>
-                        <div class="param-value" style="color:#149447;">{take_profit}</div>
-                    </div>
-                    <div class="param-box">
-                        <div class="param-label">Ratio Risk/Reward</div>
-                        <div class="param-value" style="color:#1557e8;">{ratio_rr}</div>
-                    </div>
-                </div>
-                
-                <div class="ai-box">
-                    <strong style="color:#1557e8; display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:.05em;">
-                        💡 Tesis del Modelo IA
-                    </strong>
-                    {analisis_ia}
-                </div>
-            </div>
-            """,
-                unsafe_allow_html=True,
-            )
 
 
 # ============================================================
