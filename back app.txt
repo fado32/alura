@@ -355,38 +355,64 @@ html, body, [class*="css"] {
 .signal-badge { border-radius: 7px; padding: 5px 8px; font-size: 9px; font-weight: 800; }
 
 /* ============================================================
-   UX/UI MODERN SEGMENTED CONTROL TABS (LETRA EXTRA GRANDE)
+   UX/UI MODERN SEGMENTED CONTROL TABS (FORZADO CON P Y SPAN)
    ============================================================ */
-.stTabs { margin-top: 8px; }
+.stTabs {
+    margin-top: 15px !important;
+}
+
+/* Contenedor principal de pestañas */
 .stTabs [data-baseweb="tab-list"] {
-    gap: 8px;
-    background: #e2ebf5;
-    border-radius: 18px;
-    padding: 8px;
-    border: 1px solid #d8e2ee;
-    margin-bottom: 26px;
-    display: inline-flex;
+    gap: 10px !important;
+    background: #e2ebf5 !important;
+    border-radius: 18px !important;
+    padding: 8px !important;
+    border: 1px solid #d8e2ee !important;
+    margin-bottom: 28px !important;
+    display: inline-flex !important;
 }
-.stTabs [data-baseweb="tab"] {
-    color: #475569;
-    background: transparent;
-    border: 0;
-    border-radius: 14px;
+
+/* Botón base */
+.stTabs button[data-baseweb="tab"] {
+    height: auto !important;
+    color: #475569 !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    padding: 12px 32px !important;
+    transition: all 0.2s ease !important;
+}
+
+/* Forzar tamaño en el elemento de texto interno (p / span) */
+.stTabs button[data-baseweb="tab"] p,
+.stTabs button[data-baseweb="tab"] span,
+.stTabs [data-baseweb="tab"] * {
     font-family: 'Plus Jakarta Sans', sans-serif !important;
-    font-size: 20px !important;
+    font-size: 24px !important;
     font-weight: 800 !important;
-    padding: 14px 34px !important;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: -0.02em !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
 }
-.stTabs [data-baseweb="tab"]:hover {
-    color: #1557e8;
-    background: rgba(255, 255, 255, 0.7);
+
+/* Hover */
+.stTabs button[data-baseweb="tab"]:hover {
+    color: #1557e8 !important;
+    background: rgba(255, 255, 255, 0.7) !important;
 }
-.stTabs [aria-selected="true"] {
+
+/* Pestaña activa seleccionada */
+.stTabs button[aria-selected="true"] {
     color: #1557e8 !important;
     background: #ffffff !important;
-    box-shadow: 0 4px 16px rgba(21, 87, 232, 0.18) !important;
+    box-shadow: 0 4px 18px rgba(21, 87, 232, 0.20) !important;
     border-bottom: 0 !important;
+}
+
+.stTabs button[aria-selected="true"] p,
+.stTabs button[aria-selected="true"] span,
+.stTabs button[aria-selected="true"] * {
+    color: #1557e8 !important;
 }
 
 /* FOOTER */
@@ -559,7 +585,7 @@ if df_hist.empty:
 
 
 # ============================================================
-# NAVEGACIÓN PRINCIPAL (TIPOGRAFÍA GRANDE)
+# NAVEGACIÓN PRINCIPAL
 # ============================================================
 tab_resumen, tab_cartera, tab_historial = st.tabs(
     ["📊  Resumen", "💼  Cartera", "📜  Histórico"]
