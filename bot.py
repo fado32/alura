@@ -13,7 +13,7 @@ import yfinance as yf
 client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
 MODELO_LOCAL = "llama3.2"
 ARCHIVO_HISTORIAL = "historial_alertas.csv"
-UMBRAL_VOLUMEN = 1.5
+UMBRAL_VOLUMEN = 1.2
 
 # Diccionario Maestro: Ticker -> (Nombre, Sector, Icono)
 MAESTRO_ACTIVOS = {
