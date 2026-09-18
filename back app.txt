@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+import yfinance as yf
 
 # ============================================================
 # ALURA QUANT — LIGHT FINTECH UI
@@ -24,6 +25,18 @@ def render_html(content, **kwargs):
         st.html(content)
     else:
         st.markdown(content, unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=300)
+def obtener_precio_actual(ticker):
+    """Consulta el último precio de cierre registrado para un ticker."""
+    try:
+        data = yf.Ticker(ticker).history(period="1d")
+        if not data.empty:
+            return float(data["Close"].iloc[-1])
+    except Exception:
+        pass
+    return None
 
 
 # ============================================================
@@ -148,10 +161,11 @@ html, body, [class*="css"] {
     font-size: 13px;
     margin-top: 6px;
 }
-/* KPI CARDS */
+
+/* KPI CARDS (4 COLUMNAS - SIN EN RADAR) */
 .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     margin-bottom: 22px;
 }
@@ -188,6 +202,7 @@ html, body, [class*="css"] {
     font-size: 10px;
     margin-top: 4px;
 }
+
 /* CARDS */
 .card {
     background: var(--surface);
@@ -210,7 +225,7 @@ html, body, [class*="css"] {
     margin-top: 4px;
 }
 
-/* CARTERA CARDS */
+/* CARTERA CARDS CON PRECIO ACTUAL */
 .asset-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -253,6 +268,22 @@ html, body, [class*="css"] {
     color: var(--muted);
     margin-top: 2px;
 }
+.asset-live-price {
+    text-align: right;
+}
+.asset-live-price .price-val {
+    font-family: 'Plus Jakarta Sans';
+    font-size: 18px;
+    font-weight: 800;
+    color: #1557e8;
+}
+.asset-live-price .price-lbl {
+    font-size: 10px;
+    font-weight: 700;
+    color: #8793a4;
+    text-transform: uppercase;
+}
+
 .params-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -343,83 +374,29 @@ html, body, [class*="css"] {
     background: #18a957;
 }
 
-/* TABS — TOP MENU */
+/* TABS — SUBMENÚS CON FUENTE MÁS GRANDE */
 .stTabs { margin-top: 4px; }
 .stTabs [data-baseweb="tab-list"] {
-    gap: 2px;
+    gap: 8px;
     background: transparent;
     border-bottom: 1px solid #e3eaf3;
     padding: 0;
     margin-bottom: 22px;
 }
 .stTabs [data-baseweb="tab"] {
-    color: #7a8798;
+    color: #64748b;
     background: transparent;
     border: 0;
     border-radius: 0;
-    font-size: 12px;
-    font-weight: 700;
-    padding: 10px 16px 12px;
+    font-size: 16px !important;
+    font-weight: 700 !important;
+    padding: 12px 20px;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #1c2a40; background: transparent; }
+.stTabs [data-baseweb="tab"]:hover { color: #1557e8; background: transparent; }
 .stTabs [aria-selected="true"] {
     color: var(--blue) !important;
     background: transparent !important;
-    border-bottom: 2px solid var(--blue) !important;
-}
-
-/* STREAMLIT BUTTONS / INPUTS */
-.stButton > button {
-    min-height: 39px;
-    border-radius: 10px;
-    border: 1px solid #dce5f0;
-    background: white;
-    color: #1c2b40;
-    font-size: 11px;
-    font-weight: 800;
-    box-shadow: 0 2px 7px rgba(30,50,80,.04);
-}
-.stButton > button:hover {
-    color: var(--blue);
-    border-color: #b9cef0;
-    background: #f7faff;
-}
-[data-testid="stDataFrame"] {
-    border: 1px solid var(--border);
-    border-radius: 15px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-}
-
-/* EMPTY STATE */
-.empty-state {
-    background: white;
-    border: 1px dashed #d8e2ed;
-    border-radius: 20px;
-    padding: 55px 20px;
-    text-align: center;
-    box-shadow: var(--shadow);
-}
-.empty-icon {
-    width: 48px;
-    height: 48px;
-    margin: 0 auto 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 15px;
-    color: var(--blue);
-    background: var(--blue-soft);
-    font-size: 21px;
-    font-weight: 800;
-}
-.empty-title { color: #20293a; font-family: 'Plus Jakarta Sans'; font-size: 15px; font-weight: 800; }
-.empty-text { max-width: 450px; margin: 7px auto 0; color: #8793a4; font-size: 11px; line-height: 1.65; }
-
-/* SIDEBAR */
-section[data-testid="stSidebar"] {
-    background: #fff;
-    border-right: 1px solid var(--border);
+    border-bottom: 3px solid var(--blue) !important;
 }
 
 /* FOOTER */
@@ -572,7 +549,7 @@ with st.sidebar:
 
 
 # ============================================================
-# PAGE HEADER & KPI STRIP (INTACTOS)
+# PAGE HEADER & KPI STRIP (SIN "EN RADAR")
 # ============================================================
 render_html(
     """
@@ -601,11 +578,6 @@ render_html(
         <div class="kpi-label">Alertas</div>
         <div class="kpi-value">{total_alertas}</div>
         <div class="kpi-caption">señales registradas</div>
-    </div>
-    <div class="kpi">
-        <div class="kpi-label">En radar</div>
-        <div class="kpi-value">{activas}</div>
-        <div class="kpi-caption">señales activas</div>
     </div>
     <div class="kpi">
         <div class="kpi-label">Objetivos</div>
@@ -643,65 +615,64 @@ if df_hist.empty:
 
 
 # ============================================================
-# NUEVA ESTRUCTURA DE SUBMENÚS (3 PESTAÑAS)
+# SUBMENÚ CON LETRAS MÁS GRANDES
 # ============================================================
 tab_resumen, tab_cartera, tab_historial = st.tabs(["Resumen", "Cartera", "Histórico"])
 
 
 # ============================================================
-# 1. PESTAÑA RESUMEN (Gráfico global + Desglose de alertas)
+# 1. PESTAÑA RESUMEN (Gráfico de Líneas de Beneficio Neto por Día)
 # ============================================================
 with tab_resumen:
     col_grafico, col_desglose = st.columns([1.2, 0.8], gap="large")
 
-    # Cálculos globales para la curva de patrimonio
     df_sim = df_hist.copy()
     if "Fecha" in df_sim.columns:
         df_sim = df_sim.dropna(subset=["Fecha"]).sort_values("Fecha")
 
-    capital_acumulado = float(capital_inicial)
-    curva_capital = [capital_acumulado]
+    beneficio_acumulado = 0.0
+    fechas_curva = []
+    beneficios_curva = []
 
     if not df_sim.empty and "Fecha" in df_sim.columns:
-        fechas_curva = [df_sim["Fecha"].min() - pd.Timedelta(days=1)]
-    else:
-        fechas_curva = []
+        # Formatear la fecha para que la unidad mínima sea el DÍA (YYYY-MM-DD)
+        df_sim["Fecha_Dia"] = df_sim["Fecha"].dt.strftime("%Y-%m-%d")
+        
+        # Agrupar operaciones por día
+        for dia, grupo in df_sim.groupby("Fecha_Dia"):
+            beneficio_dia = 0.0
+            for _, row in grupo.iterrows():
+                estado_op = str(row.get("Estado", ""))
+                precio_ent = (
+                    float(row["Precio_Alerta"])
+                    if "Precio_Alerta" in row and pd.notna(row["Precio_Alerta"])
+                    else 100.0
+                )
+                precio_sl = (
+                    float(row["Stop_Loss"])
+                    if "Stop_Loss" in row and pd.notna(row["Stop_Loss"])
+                    else precio_ent * (1 - stop_loss_pct / 100)
+                )
+                precio_tp = (
+                    float(row["Take_Profit"])
+                    if "Take_Profit" in row and pd.notna(row["Take_Profit"])
+                    else precio_ent * (1 + take_profit_pct / 100)
+                )
 
-    for _, row in df_sim.iterrows():
-        estado_op = str(row.get("Estado", ""))
-        rendimiento = 0.0
+                pct_ganancia = (precio_tp - precio_ent) / precio_ent if precio_ent > 0 else 0.10
+                pct_pérdida = (precio_ent - precio_sl) / precio_ent if precio_ent > 0 else 0.04
 
-        precio_ent = (
-            float(row["Precio_Alerta"])
-            if "Precio_Alerta" in row and pd.notna(row["Precio_Alerta"])
-            else 100.0
-        )
-        precio_sl = (
-            float(row["Stop_Loss"])
-            if "Stop_Loss" in row and pd.notna(row["Stop_Loss"])
-            else precio_ent * (1 - stop_loss_pct / 100)
-        )
-        precio_tp = (
-            float(row["Take_Profit"])
-            if "Take_Profit" in row and pd.notna(row["Take_Profit"])
-            else precio_ent * (1 + take_profit_pct / 100)
-        )
+                if "OBJETIVO_CUMPLIDO" in estado_op:
+                    beneficio_dia += capital_por_alerta * pct_ganancia
+                elif "STOP_SALTADO" in estado_op:
+                    beneficio_dia -= capital_por_alerta * pct_pérdida
 
-        pct_ganancia = (precio_tp - precio_ent) / precio_ent if precio_ent > 0 else 0.10
-        pct_pérdida = (precio_ent - precio_sl) / precio_ent if precio_ent > 0 else 0.04
+            beneficio_acumulado += beneficio_dia
+            fechas_curva.append(dia)
+            beneficios_curva.append(beneficio_acumulado)
 
-        if "OBJETIVO_CUMPLIDO" in estado_op:
-            rendimiento = capital_por_alerta * pct_ganancia
-        elif "STOP_SALTADO" in estado_op:
-            rendimiento = -(capital_por_alerta * pct_pérdida)
-
-        capital_acumulado += rendimiento
-        curva_capital.append(capital_acumulado)
-        fechas_curva.append(row["Fecha"])
-
-    rendimiento_total = capital_acumulado - capital_inicial
     rentabilidad_pct = (
-        (rendimiento_total / capital_inicial * 100) if capital_inicial else 0
+        (beneficio_acumulado / capital_inicial * 100) if capital_inicial else 0
     )
 
     with col_grafico:
@@ -710,15 +681,15 @@ with tab_resumen:
         <div class="card">
             <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                 <div>
-                    <div class="card-title">Rendimiento Global del Sistema</div>
-                    <div class="card-subtitle">Evolución del capital simulado en base a alertas históricas</div>
+                    <div class="card-title">Beneficio Neto Acumulado (€)</div>
+                    <div class="card-subtitle">Evolución diaria del rendimiento sobre lo invertido</div>
                 </div>
                 <div style="text-align:right;">
-                    <div style="font-family:'Plus Jakarta Sans'; font-size:22px; font-weight:800; color:{'#149447' if rentabilidad_pct >= 0 else '#d94343'};">
-                        {rentabilidad_pct:+.2f}%
+                    <div style="font-family:'Plus Jakarta Sans'; font-size:22px; font-weight:800; color:{'#149447' if beneficio_acumulado >= 0 else '#d94343'};">
+                        {beneficio_acumulado:+,.2f} €
                     </div>
                     <div style="font-size:10px; color:#8793a4; font-weight:700;">
-                        {rendimiento_total:+,.0f} € neto
+                        {rentabilidad_pct:+.2f}% sobre capital
                     </div>
                 </div>
             </div>
@@ -727,14 +698,15 @@ with tab_resumen:
             unsafe_allow_html=True,
         )
 
-        df_equity = pd.DataFrame(
-            {"Fecha": fechas_curva, "Evolución Capital (€)": curva_capital}
-        ).set_index("Fecha")
+        if fechas_curva:
+            df_beneficio = pd.DataFrame(
+                {"Día": fechas_curva, "Beneficio Neto (€)": beneficios_curva}
+            ).set_index("Día")
 
-        if len(df_equity) > 1:
-            st.area_chart(df_equity, height=330)
+            # Gráfico de Líneas con unidad diaria
+            st.line_chart(df_beneficio, height=330)
         else:
-            st.info("Se necesitan más fechas registradas para trazar el gráfico de evolución.")
+            st.info("Se necesitan más fechas registradas para trazar el gráfico de rendimiento.")
 
     with col_desglose:
         render_html(
@@ -744,7 +716,7 @@ with tab_resumen:
             <div class="card-subtitle">Estado actual de las posiciones detectadas</div>
             <div style="margin-top:16px;">
                 <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid #edf1f6;">
-                    <span style="color:#68768a; font-size:12px; font-weight:600;">Señales en radar (Activas)</span>
+                    <span style="color:#68768a; font-size:12px; font-weight:600;">Señales activas en radar</span>
                     <strong style="color:#2164db; font-size:13px;">{activas}</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; padding:12px 0; border-bottom:1px solid #edf1f6;">
@@ -765,7 +737,6 @@ with tab_resumen:
             unsafe_allow_html=True,
         )
 
-        # Últimas alertas activas / recientes
         df_recent = df_hist.head(4)
         rows_recent_html = []
         for _, row in df_recent.iterrows():
@@ -807,7 +778,7 @@ with tab_resumen:
 
 
 # ============================================================
-# 2. PESTAÑA CARTERA (Tarjetas con parámetros y texto IA)
+# 2. PESTAÑA CARTERA (CON PRECIO ACTUAL EN LA MISMA FILA)
 # ============================================================
 with tab_cartera:
     df_activas = df_hist[
@@ -831,6 +802,13 @@ with tab_cartera:
             empresa = row.get("Empresa", row.get("Ticker", "Activo"))
             ticker = row.get("Ticker", "")
             sector = row.get("Sector", "Mercado Continuo")
+
+            # Obtención del precio actual en tiempo real
+            precio_actual_val = obtener_precio_actual(ticker)
+            if precio_actual_val:
+                precio_actual_str = f"{precio_actual_val:.2f} €"
+            else:
+                precio_actual_str = "—"
 
             precio_ent = (
                 f"{row['Precio_Alerta']:.2f} €"
@@ -870,7 +848,10 @@ with tab_cartera:
                             <div class="asset-subtitle">{sector}</div>
                         </div>
                     </div>
-                    <span class="signal-badge" style="background:#eaf1ff; color:#2164db; font-size:10px; padding:6px 12px;">ACTIVA</span>
+                    <div class="asset-live-price">
+                        <div class="price-val">{precio_actual_str}</div>
+                        <div class="price-lbl">Precio Actual</div>
+                    </div>
                 </div>
                 
                 <div class="params-grid">
