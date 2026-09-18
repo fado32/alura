@@ -60,6 +60,12 @@ BREAKOUT_LOOKBACK = 50
 # ---- Scoring ----
 SCORE_MINIMO = 72
 MAX_CANDIDATOS = 5
+# BOT 3.1 - diagnóstico completo
+MODO_DIAGNOSTICO = True
+MOSTRAR_TOP_DESCARTADOS = 15
+GUARDAR_DIAGNOSTICO_CSV = True
+DIAGNOSTICO_CSV = "diagnostico_bot.csv"
+
 
 # Pesos del score.
 PESO_MOMENTUM = 25
@@ -576,28 +582,111 @@ def calcular_score(
 # ANÁLISIS DE ACTIVO
 # ============================================================
 
-def analizar_activo(ticker_symbol, benchmark_data):
-    try:
-        ticker_obj = yf.Ticker(ticker_symbol)
 
-        # 2 años permiten calcular EMA200 y momentum de 120 sesiones
-        # con margen suficiente.
-        data = ticker_obj.history(
+# ============================================================
+# BOT 3.1 - DIAGNÓSTICO
+# ============================================================
+
+DIAGNOSTICO = []
+
+def registrar_diagnostico(ticker, company="", stage="", reason="",
+                          score=None, **metrics):
+    """Registra por qué un activo continúa o queda descartado."""
+    row = {
+        "Ticker": ticker,
+        "Company": company,
+        "Stage": stage,
+        "Reason": reason,
+        "Score": safe_float(score),
+    }
+    row.update(metrics)
+    DIAGNOSTICO.append(row)
+
+def imprimir_diagnostico():
+    if not DIAGNOSTICO:
+        print("\n📊 DIAGNÓSTICO: no hubo registros.")
+        return
+
+    df = pd.DataFrame(DIAGNOSTICO)
+
+    print("\n" + "=" * 78)
+    print("📊 BOT 3.1 — DIAGNÓSTICO DEL ESCÁNER")
+    print("=" * 78)
+
+    if "Stage" in df.columns:
+        print("\n🔎 ACTIVOS POR ETAPA:")
+        print(df["Stage"].value_counts().to_string())
+
+    if "Reason" in df.columns:
+        print("\n🚫 PRINCIPALES MOTIVOS DE DESCARTE:")
+        print(df["Reason"].fillna("SIN_MOTIVO").value_counts().head(25).to_string())
+
+    # Último registro por ticker para enseñar el estado final.
+    if "Ticker" in df.columns:
+        ultimo = df.groupby("Ticker", as_index=False).tail(1).copy()
+        cols = [c for c in [
+            "Ticker", "Company", "Stage", "Reason", "Score",
+            "RSI", "Volume_Ratio", "Momentum60", "RelativeStrength60",
+            "ATR_pct", "Risk_pct", "RR"
+        ] if c in ultimo.columns]
+        if cols:
+            ultimo = ultimo.sort_values(
+                "Score", ascending=False, na_position="last"
+            )
+            print("\n📋 ESTADO FINAL POR TICKER:")
+            print(ultimo[cols].head(MOSTRAR_TOP_DESCARTADOS).to_string(index=False))
+
+    if GUARDAR_DIAGNOSTICO_CSV:
+        try:
+            df.to_csv(DIAGNOSTICO_CSV, index=False, encoding="utf-8-sig")
+            print(f"\n💾 Diagnóstico guardado en: {DIAGNOSTICO_CSV}")
+        except Exception as e:
+            print(f"⚠️ No se pudo guardar {DIAGNOSTICO_CSV}: {e}")
+
+def diagnostico_filtro(ticker, company, stage, condition, reason, **metrics):
+    """Registra un filtro y devuelve la condición sin alterar la estrategia."""
+    if condition:
+        registrar_diagnostico(
+            ticker, company, stage=stage, reason="PASA", **metrics
+        )
+        return True
+    registrar_diagnostico(
+        ticker, company, stage=stage, reason=reason, **metrics
+    )
+    return False
+
+def analizar_activo(ticker_symbol, company, sector, benchmark_ret_60=0.0):
+    """
+    BOT 3.1:
+    Igual que BOT 3.0 en criterios de trading, pero registra cada descarte
+    para poder identificar el cuello de botella del sistema.
+    """
+    try:
+        data = yf.download(
+            ticker_symbol,
             period="2y",
             interval="1d",
-            auto_adjust=True,
+            auto_adjust=False,
+            progress=False,
+            threads=False,
         )
-
-        if data.empty or len(data) < 220:
-            return None
 
         data = normalizar_columnas(data)
 
-        required = {"Open", "High", "Low", "Close", "Volume"}
-        if not required.issubset(set(data.columns)):
+        if data is None or data.empty:
+            registrar_diagnostico(
+                ticker_symbol, company, "DATA", "SIN_DATOS"
+            )
             return None
 
         data = calcular_indicadores(data)
+
+        if data.empty or len(data) < 200:
+            registrar_diagnostico(
+                ticker_symbol, company, "DATA",
+                f"HISTORIAL_INSUFICIENTE:{len(data)}"
+            )
+            return None
 
         ultimo = data.iloc[-1]
 
@@ -610,188 +699,288 @@ def analizar_activo(ticker_symbol, benchmark_data):
         volumen = safe_float(ultimo.get("Volume"))
         volumen_medio = safe_float(ultimo.get("Vol_Mean_20"))
         eur_vol_medio = safe_float(ultimo.get("Avg_EUR_Vol_20"))
-
         mom20 = safe_float(ultimo.get("Mom_20"))
         mom60 = safe_float(ultimo.get("Mom_60"))
         mom120 = safe_float(ultimo.get("Mom_120"))
 
-        # No puntuar una fila incompleta. Esto evita comparaciones del tipo
-        # None > float y evita generar señales con indicadores inválidos.
-        if any(
-            x is None
-            for x in [
-                precio, ema20, ema50, ema200, rsi, atr, volumen,
-                volumen_medio, eur_vol_medio, mom20, mom60, mom120
-            ]
-        ):
+        if any(x is None for x in [
+            precio, ema20, ema50, ema200, rsi, atr, volumen,
+            volumen_medio, eur_vol_medio, mom20, mom60, mom120
+        ]):
+            registrar_diagnostico(
+                ticker_symbol, company, "INDICADORES",
+                "INDICADOR_NONE",
+                RSI=rsi, Volume_Ratio=None, Momentum60=mom60
+            )
             return None
 
-        prev_high_50 = safe_float(ultimo["Prev_High_50"])
-        breakout = (
-            prev_high_50 is not None
-            and precio > prev_high_50
-        )
-
-        if any(
-            x is None
-            for x in [precio, ema20, ema50, ema200, rsi, atr, volumen,
-                      volumen_medio, eur_vol_medio, mom20, mom60, mom120]
-        ):
-            return None
-
-        ratio_volumen = (
-            volumen / volumen_medio
-            if volumen_medio and volumen_medio > 0
-            else 0
-        )
-
+        volume_ratio = volumen / volumen_medio if volumen_medio > 0 else None
         atr_pct = (atr / precio) * 100 if precio > 0 else None
 
-        # Relative Strength contra el benchmark.
-        benchmark_ret_60 = safe_float(benchmark_data.get("ret60"))
-        asset_ret_60 = safe_float(mom60, 0.0)
-
-        if benchmark_ret_60 is not None:
-            relative_strength = asset_ret_60 - benchmark_ret_60
-        else:
-            relative_strength = asset_ret_60
-
-        # PER: no eliminamos automáticamente si falta el dato.
+        # PER: mantener la lógica del BOT 3.0.
+        per = None
         try:
-            info = ticker_obj.info
+            info = yf.Ticker(ticker_symbol).info
             per = safe_float(info.get("trailingPE"))
-            cap_mercado = safe_float(info.get("marketCap"), 0)
         except Exception:
-            per = None
-            cap_mercado = 0
+            pass
 
-        # Filtro de calidad / liquidez.
+        # ------------------------------------------------------------
+        # FILTROS BÁSICOS
+        # ------------------------------------------------------------
         if precio < PRECIO_MINIMO:
+            registrar_diagnostico(
+                ticker_symbol, company, "PRECIO", "PRECIO_MINIMO",
+                Price=precio
+            )
             return None
 
-        if eur_vol_medio is not None and eur_vol_medio < VOLUMEN_EUR_MEDIO_MIN:
+        if eur_vol_medio < VOLUMEN_EUR_MEDIO_MIN:
+            registrar_diagnostico(
+                ticker_symbol, company, "LIQUIDEZ", "LIQUIDEZ_INSUFICIENTE",
+                Avg_EUR_Vol=eur_vol_medio
+            )
             return None
 
-        # PER extremadamente alto o negativo sí se excluye.
         if per is not None and (per <= 0 or per > PER_MAX):
+            registrar_diagnostico(
+                ticker_symbol, company, "FUNDAMENTAL",
+                f"PER_FUERA_RANGO:{per:.2f}",
+                PER=per
+            )
             return None
 
-        soporte_60, resistencia_60, soporte_15 = (
-            calcular_soportes_resistencias(data)
+        registrar_diagnostico(
+            ticker_symbol, company, "BASICOS", "PASA",
+            Price=precio, PER=per, Avg_EUR_Vol=eur_vol_medio
         )
 
-        # Stop adaptado a volatilidad.
+        # ------------------------------------------------------------
+        # INDICADORES / SCORE
+        # ------------------------------------------------------------
+        momentum_score = (
+            max(0, min(100, 50 + mom20 * 100)) * 0.20 +
+            max(0, min(100, 50 + mom60 * 100)) * 0.40 +
+            max(0, min(100, 50 + mom120 * 100)) * 0.40
+        )
+
+        trend_base = (
+            40 if precio > ema50 else 0
+        ) + (
+            30 if ema20 > ema50 else 0
+        ) + (
+            30 if ema50 > ema200 else 0
+        )
+
+        rsi_score = max(0, min(100, 100 - abs(rsi - 62) * 2.5))
+        trend_score = trend_base * 0.75 + rsi_score * 0.25
+
+        benchmark_ret_60 = safe_float(benchmark_ret_60, 0.0)
+        relative_strength = mom60 - benchmark_ret_60
+
+        relative_strength_score = max(
+            0, min(100, 50 + relative_strength * 150)
+        )
+
+        if volume_ratio is None:
+            volume_score = 0
+        elif volume_ratio >= 2.0:
+            volume_score = 100
+        elif volume_ratio >= 1.5:
+            volume_score = 90
+        elif volume_ratio >= 1.2:
+            volume_score = 75
+        elif volume_ratio >= 1.0:
+            volume_score = 55
+        else:
+            volume_score = 25
+
+        previous_high = data["High"].shift(1).rolling(
+            BREAKOUT_LOOKBACK
+        ).max().iloc[-1]
+        previous_high = safe_float(previous_high)
+
+        if previous_high is not None and precio > previous_high:
+            breakout_score = 90
+        elif previous_high is not None and precio > previous_high * 0.97:
+            breakout_score = 60
+        else:
+            breakout_score = 30
+
+        if atr_pct is None:
+            volatility_score = 0
+        elif 1.5 <= atr_pct <= 5:
+            volatility_score = 100
+        elif 1.0 <= atr_pct < 1.5 or 5 < atr_pct <= 7:
+            volatility_score = 75
+        elif atr_pct < 1.0:
+            volatility_score = 55
+        else:
+            volatility_score = 25
+
+        if per is None:
+            fundamental_score = 50
+        elif per <= 20:
+            fundamental_score = 100
+        elif per <= 35:
+            fundamental_score = 80
+        elif per <= 60:
+            fundamental_score = 60
+        elif per <= PER_MAX:
+            fundamental_score = 35
+        else:
+            fundamental_score = 0
+
+        score = (
+            momentum_score * 0.25 +
+            trend_score * 0.20 +
+            relative_strength_score * 0.15 +
+            volume_score * 0.15 +
+            breakout_score * 0.10 +
+            volatility_score * 0.10 +
+            fundamental_score * 0.05
+        )
+
+        # ------------------------------------------------------------
+        # CONDICIONES DE ENTRADA
+        # ------------------------------------------------------------
+        metrics = dict(
+            Price=precio,
+            PER=per,
+            RSI=rsi,
+            Volume_Ratio=volume_ratio,
+            Momentum20=mom20,
+            Momentum60=mom60,
+            Momentum120=mom120,
+            RelativeStrength60=relative_strength,
+            ATR_pct=atr_pct,
+            Score=score,
+        )
+
+        if not (precio > ema50):
+            registrar_diagnostico(
+                ticker_symbol, company, "TENDENCIA",
+                "PRECIO_NO_SUPERA_EMA50", **metrics
+            )
+            return None
+
+        if not (ema50 > ema200):
+            registrar_diagnostico(
+                ticker_symbol, company, "TENDENCIA",
+                "EMA50_NO_SUPERA_EMA200", **metrics
+            )
+            return None
+
+        if not (RSI_MIN <= rsi <= RSI_MAX):
+            registrar_diagnostico(
+                ticker_symbol, company, "RSI",
+                "RSI_FUERA_RANGO", **metrics
+            )
+            return None
+
+        if volume_ratio is None or volume_ratio < VOLUME_RATIO_MIN:
+            registrar_diagnostico(
+                ticker_symbol, company, "VOLUMEN",
+                "VOLUMEN_INSUFICIENTE", **metrics
+            )
+            return None
+
+        # Stop estructural + ATR: conservar el criterio del BOT 3.0.
+        soporte_15 = safe_float(data["Low"].rolling(15).min().iloc[-1])
+
         stop_atr = precio - ATR_MULTIPLICADOR_SL * atr
+        stop_estructural = (
+            soporte_15 * 0.995
+            if soporte_15 is not None
+            else stop_atr
+        )
 
-        # Stop estructural: por debajo del mínimo de 15 sesiones.
-        stop_estructural = soporte_15 * 0.995
-
-        # Utilizamos el stop más conservador (más cercano al precio),
-        # pero nunca por encima de la entrada.
         stop_loss = max(stop_atr, stop_estructural)
 
-        if stop_loss >= precio:
-            return None
-
-        riesgo_pct = (precio - stop_loss) / precio
-
-        # TP inicial 3R, limitado por un margen razonable.
-        # El sistema además dispone de trailing para dejar correr ganadoras.
-        take_profit = precio + (precio - stop_loss) * 3.0
-
-        riesgo = precio - stop_loss
-        beneficio = take_profit - precio
-        ratio_rr = beneficio / riesgo if riesgo > 0 else 0
-
-        if ratio_rr < RR_MINIMO:
-            return None
-
-        score = calcular_score(
-            precio=precio,
-            ema20=ema20,
-            ema50=ema50,
-            ema200=ema200,
-            rsi=rsi,
-            ratio_volumen=ratio_volumen,
-            mom20=mom20,
-            mom60=mom60,
-            mom120=mom120,
-            relative_strength=relative_strength,
-            atr_pct=atr_pct,
-            breakout=breakout,
-            per=per,
+        riesgo_unitario = precio - stop_loss
+        risk_pct = (
+            riesgo_unitario / precio
+            if precio > 0 and riesgo_unitario > 0
+            else None
         )
 
-        # Condiciones mínimas de tendencia.
-        if precio <= ema50 or ema50 <= ema200:
+        if risk_pct is None or risk_pct <= 0:
+            registrar_diagnostico(
+                ticker_symbol, company, "RIESGO",
+                "STOP_INVALIDO", **metrics
+            )
             return None
 
-        # Evitar comprar extremos de RSI.
-        if rsi < RSI_MIN or rsi > RSI_MAX:
+        if risk_pct > 0.10:
+            registrar_diagnostico(
+                ticker_symbol, company, "RIESGO",
+                "RIESGO_POR_OPERACION_DEMASIADO_ALTO",
+                Risk_pct=risk_pct,
+                **{k: v for k, v in metrics.items() if k != "Risk_pct"}
+            )
             return None
 
-        # Evitar operaciones con stop excesivamente lejano.
-        if riesgo_pct > 0.10:
+        tp = precio + riesgo_unitario * 3.0
+        rr = (tp - precio) / riesgo_unitario
+
+        if rr < RR_MINIMO:
+            registrar_diagnostico(
+                ticker_symbol, company, "RR",
+                "RR_INSUFICIENTE", RR=rr, Risk_pct=risk_pct, **metrics
+            )
             return None
 
-        nombre, sector, icono = MAESTRO_ACTIVOS.get(
-            ticker_symbol,
-            (ticker_symbol, "General", "📈"),
+        if score < SCORE_MINIMO:
+            registrar_diagnostico(
+                ticker_symbol, company, "SCORE",
+                f"SCORE_INSUFICIENTE:{score:.2f}<{SCORE_MINIMO}",
+                RR=rr, Risk_pct=risk_pct,
+                **{k: v for k, v in metrics.items() if k != "Score"}
+            )
+            return None
+
+        registrar_diagnostico(
+            ticker_symbol, company, "CANDIDATO",
+            "PASA_TODOS_LOS_FILTROS",
+            RR=rr, Risk_pct=risk_pct,
+            **{k: v for k, v in metrics.items() if k != "Score"}
         )
 
-        # Position sizing por riesgo.
-        riesgo_monetario = CAPITAL_REFERENCIA * RIESGO_POR_OPERACION
-        posicion_teorica = (
-            riesgo_monetario / riesgo_pct
-            if riesgo_pct > 0
-            else 0
-        )
+        # Tamaño de posición por riesgo fijo.
+        capital_riesgo = CAPITAL_REFERENCIA * RIESGO_POR_OPERACION
+        cantidad = capital_riesgo / riesgo_unitario
+        posicion_eur = cantidad * precio
 
         return {
             "ticker": ticker_symbol,
-            "empresa": nombre,
+            "empresa": company,
             "sector": sector,
-            "icono": icono,
-            "precio": round(precio, 2),
-            "stop_loss": round(stop_loss, 2),
-            "take_profit": round(take_profit, 2),
-            "ratio_rr": round(ratio_rr, 2),
-            "riesgo_pct": round(riesgo_pct * 100, 2),
-            "riesgo_eur_referencia": round(riesgo_monetario, 2),
-            "posicion_eur_referencia": round(posicion_teorica, 2),
-            "per": round(per, 2) if per is not None else "N/D",
-            "cap_mercado_millones": (
-                round(cap_mercado / 1e6, 1)
-                if cap_mercado
-                else "N/D"
-            ),
-            "ema20": round(ema20, 2),
-            "ema50": round(ema50, 2),
-            "ema200": round(ema200, 2),
+            "icono": "📈",
+            "precio": round(precio, 4),
+            "stop_loss": round(stop_loss, 4),
+            "take_profit": round(tp, 4),
+            "ratio_rr": round(rr, 2),
+            "riesgo_pct": round(risk_pct * 100, 2),
+            "posicion_eur_referencia": round(posicion_eur, 2),
+            "score": round(score, 2),
             "rsi": round(rsi, 2),
-            "atr": round(atr, 2),
-            "atr_pct": round(atr_pct, 2) if atr_pct is not None else "N/D",
-            "ratio_volumen": round(ratio_volumen, 2),
-            "mom20": round(mom20, 2),
-            "mom60": round(mom60, 2),
-            "mom120": round(mom120, 2),
-            "relative_strength_60": round(relative_strength, 2),
-            "soporte": soporte_15,
-            "resistencia": resistencia_60,
-            "breakout_50": breakout,
-            "score": score,
+            "atr_pct": round(atr_pct, 2),
+            "ratio_volumen": round(volume_ratio, 2),
+            "mom20": round(mom20 * 100, 2),
+            "mom60": round(mom60 * 100, 2),
+            "mom120": round(mom120 * 100, 2),
+            "relative_strength_60": round(relative_strength * 100, 2),
+            "breakout_50": round(breakout_score, 2),
+            "State": "ACTIVA",
         }
 
     except Exception as e:
-        print(
-            f"⚠️ Error analizando {ticker_symbol}: {type(e).__name__}: {e}"
+        print(f"⚠️ Error analizando {ticker_symbol}: {type(e).__name__}: {e}")
+        registrar_diagnostico(
+            ticker_symbol, company, "ERROR", f"{type(e).__name__}: {e}"
         )
         return None
 
-
-# ============================================================
-# CONTROL DE CARTERA
-# ============================================================
 
 def filtrar_por_riesgo_y_correlacion(candidatos, estado_cartera):
     """
@@ -1282,9 +1471,16 @@ if __name__ == "__main__":
     # 6. Escaneo.
     candidatos_detectados = []
 
+    
+
     for idx, ticker in enumerate(activos, 1):
         if ticker in tickers_bloqueados:
             continue
+
+        # Extraemos el nombre y sector correspondientes al ticker desde el maestro
+        empresa, sector, _ = MAESTRO_ACTIVOS.get(
+            ticker, (ticker, "General", "📈")
+        )
 
         print(
             f"[{idx}/{len(activos)}] Analizando {ticker}...",
@@ -1293,6 +1489,8 @@ if __name__ == "__main__":
 
         resultado = analizar_activo(
             ticker,
+            empresa,
+            sector,
             benchmark_data,
         )
 
