@@ -26,7 +26,7 @@ st.set_page_config(
 ARCHIVO_HISTORIAL = "historial_alertas.csv"
 ARCHIVO_UNIVERSO = "universo_activos.csv"
 
-CAPITAL_INICIAL = 0
+CAPITAL_INICIAL = 3600
 CAPITAL_POR_ALERTA = 300.0
 
 
