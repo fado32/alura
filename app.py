@@ -2666,7 +2666,7 @@ render_html(
         </div>
 
         <div class="summary-detail">
-            Sobre {CAPITAL_INICIAL:,.0f} € simulados
+            Sobre {CAPITAL_INICIAL:,.0f} € 
         </div>
 
     </div>
