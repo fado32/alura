@@ -26,7 +26,6 @@ st.set_page_config(
 ARCHIVO_HISTORIAL = "historial_alertas.csv"
 ARCHIVO_UNIVERSO = "universo_activos.csv"
 
-CAPITAL_INICIAL = 3600
 CAPITAL_POR_ALERTA = 300.0
 
 
@@ -366,7 +365,7 @@ def calcular_pnl_posicion(
 ):
 
     """
-    Calcula el P&L no realizado de una posición.
+    Calcula el P&L no realizado de una posición basándose en 300€.
     """
 
     if (
@@ -420,7 +419,7 @@ def calcular_pnl_posicion(
 def calcular_beneficio_realizado(df):
 
     """
-    Calcula únicamente operaciones cerradas.
+    Calcula únicamente operaciones cerradas utilizando 300€ por posición.
     """
 
     beneficio = 0.0
@@ -506,7 +505,7 @@ def calcular_beneficio_no_realizado(
 
     """
     Calcula el beneficio/pérdida actual de todas las posiciones
-    abiertas.
+    abiertas basándose en 300€ por posición.
     """
 
     beneficio_total = 0.0
@@ -545,7 +544,8 @@ def calcular_beneficio_no_realizado(
         beneficio, porcentaje = (
             calcular_pnl_posicion(
                 precio_actual,
-                precio_entrada
+                precio_entrada,
+                CAPITAL_POR_ALERTA
             )
         )
 
@@ -577,15 +577,7 @@ def calcular_resultados(
 ):
 
     """
-    Calcula la curva de beneficio.
-
-    Histórico:
-        operaciones cerradas
-
-    Último punto:
-        beneficio realizado
-        +
-        beneficio abierto actual
+    Calcula la curva de beneficio histórico escalada a 300€ por posición.
     """
 
     beneficio_realizado = 0.0
@@ -2562,7 +2554,7 @@ beneficio_realizado = (
 
 
 # ============================================================
-# BENEFICIO TOTAL SIMULADO
+# BENEFICIO TOTAL Y CAPITAL DINÁMICO
 # ============================================================
 
 beneficio_acumulado = (
@@ -2570,6 +2562,9 @@ beneficio_acumulado = (
     beneficio_no_realizado
 )
 
+# Capital inicial escalable basado en el número total de operaciones históricas o al menos 3600€
+total_operaciones_historicas = max(1, len(df_hist))
+CAPITAL_INICIAL = max(3600.0, total_operaciones_historicas * CAPITAL_POR_ALERTA)
 
 rentabilidad_pct = (
     beneficio_acumulado
@@ -3063,9 +3058,6 @@ with tab_cartera:
 
             # ------------------------------------------------
             # P&L ACTUAL
-            #
-            # Se utiliza únicamente para calcular
-            # "Rendimiento desde entrada".
             # ------------------------------------------------
 
             (
@@ -3073,14 +3065,13 @@ with tab_cartera:
                 porcentaje_posicion
             ) = calcular_pnl_posicion(
                 precio_actual,
-                precio_entrada
+                precio_entrada,
+                CAPITAL_POR_ALERTA
             )
 
 
             # ------------------------------------------------
             # PERFORMANCE
-            #
-            # ÚNICO LUGAR DONDE MOSTRAMOS EL RENDIMIENTO
             # ------------------------------------------------
 
             if (
