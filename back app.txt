@@ -591,7 +591,7 @@ with tab_cartera:
                 
                 <div class="ai-comment-box">
                     <strong style="color: var(--brand-blue); display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">
-                        💡 Tesis del Analista Cuantitativo
+                        💡 Tesis del Analista
                     </strong>
                     {analisis_ia}
                 </div>
@@ -606,8 +606,8 @@ with tab_cartera:
 with tab_resultados:
     col_g1, col_g2 = st.columns([1.3, 0.7], gap="large")
 
-    capital_inicial = 10000.0
-    capital_por_alerta = 1000.0
+    capital_inicial = 3000.0
+    capital_por_alerta = 300.0
     beneficio_acumulado = 0.0
     fechas_curva, beneficios_curva = [], []
 
