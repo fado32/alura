@@ -68,7 +68,9 @@ def safe_float(value, default=None):
     try:
         if value is None or pd.isna(value):
             return default
+
         return float(value)
+
     except Exception:
         return default
 
@@ -79,8 +81,15 @@ def obtener_total_activos():
     del universo.
     """
     if os.path.exists(ARCHIVO_UNIVERSO):
-        for encoding in ["utf-8", "latin-1", "cp1252"]:
+
+        for encoding in [
+            "utf-8",
+            "latin-1",
+            "cp1252"
+        ]:
+
             try:
+
                 df = pd.read_csv(
                     ARCHIVO_UNIVERSO,
                     encoding=encoding
@@ -109,6 +118,7 @@ def cargar_datos():
         return pd.DataFrame()
 
     try:
+
         return pd.read_csv(
             ARCHIVO_HISTORIAL,
             on_bad_lines="skip",
@@ -118,6 +128,7 @@ def cargar_datos():
     except Exception:
 
         try:
+
             return pd.read_csv(
                 ARCHIVO_HISTORIAL,
                 on_bad_lines="skip",
@@ -125,6 +136,7 @@ def cargar_datos():
             )
 
         except Exception:
+
             return pd.DataFrame()
 
 
@@ -136,7 +148,9 @@ def obtener_precio_actual(ticker):
 
     try:
 
-        data = yf.Ticker(str(ticker)).history(
+        data = yf.Ticker(
+            str(ticker)
+        ).history(
             period="1d",
             auto_adjust=False
         )
@@ -155,39 +169,100 @@ def obtener_precio_actual(ticker):
 
 
 # ============================================================
+# PRECIOS ACTUALES DE POSICIONES
+# ============================================================
+
+def obtener_precios_activos(df):
+
+    """
+    Obtiene una única vez el precio actual de cada ticker
+    activo.
+
+    Devuelve:
+
+        {
+            "REP.MC": 15.42,
+            "SAN.MC": 7.91,
+            ...
+        }
+    """
+
+    precios = {}
+
+    if df.empty or "Ticker" not in df.columns:
+        return precios
+
+    tickers = (
+        df["Ticker"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+        .tolist()
+    )
+
+    for ticker in tickers:
+
+        if not ticker:
+            continue
+
+        precios[ticker] = obtener_precio_actual(
+            ticker
+        )
+
+    return precios
+
+
+# ============================================================
 # FORMATEADORES
 # ============================================================
 
-def formatear_numero(value, decimals=2, suffix=""):
-    """
-    Formatea números de forma consistente.
-    """
+def formatear_numero(
+    value,
+    decimals=2,
+    suffix=""
+):
+
     if value is None:
         return "—"
 
     try:
-        return f"{value:,.{decimals}f}{suffix}"
+
+        return (
+            f"{value:,.{decimals}f}"
+            f"{suffix}"
+        )
+
     except Exception:
+
         return "—"
 
 
-def formatear_euros(value, decimals=2):
-    """
-    Formato visual para importes.
-    """
+def formatear_euros(
+    value,
+    decimals=2
+):
+
     if value is None:
         return "—"
 
     try:
-        return f"{value:+,.{decimals}f} €"
+
+        return (
+            f"{value:+,.{decimals}f} €"
+        )
+
     except Exception:
+
         return "—"
 
 
 def formatear_tesis_ia(texto):
+
     """
     Limpia y formatea la tesis generada por IA.
     """
+
     if not isinstance(texto, str):
         return "Sin análisis disponible."
 
@@ -236,7 +311,10 @@ def preparar_fecha(df):
     return df
 
 
-def contar_estado(df, texto):
+def contar_estado(
+    df,
+    texto
+):
 
     if "Estado" not in df.columns:
         return 0
@@ -282,10 +360,15 @@ def calcular_metricas(df):
         "ACTIVA"
     )
 
-    total_cerradas = exitos + fallos
+    total_cerradas = (
+        exitos +
+        fallos
+    )
 
     win_rate = (
-        exitos / total_cerradas * 100
+        exitos /
+        total_cerradas *
+        100
         if total_cerradas
         else 0
     )
@@ -300,19 +383,262 @@ def calcular_metricas(df):
 
 
 # ============================================================
-# CÁLCULO DE BENEFICIO
+# BENEFICIO DE UNA POSICIÓN
 # ============================================================
 
-def calcular_resultados(df):
+def calcular_pnl_posicion(
+    precio_actual,
+    precio_entrada,
+    capital=CAPITAL_POR_ALERTA
+):
 
-    beneficio_acumulado = 0.0
+    """
+    Calcula el P&L no realizado de una posición.
+
+    Ejemplo:
+
+        Entrada: 10 €
+        Actual: 11 €
+        Capital: 300 €
+
+        Resultado:
+            +30 €
+            +10%
+    """
+
+    if (
+        precio_actual is None
+        or precio_entrada is None
+    ):
+        return None, None
+
+    try:
+
+        precio_actual = float(
+            precio_actual
+        )
+
+        precio_entrada = float(
+            precio_entrada
+        )
+
+        if precio_entrada <= 0:
+            return None, None
+
+        porcentaje = (
+            (
+                precio_actual -
+                precio_entrada
+            )
+            /
+            precio_entrada
+        ) * 100
+
+        beneficio = (
+            capital *
+            porcentaje /
+            100
+        )
+
+        return (
+            beneficio,
+            porcentaje
+        )
+
+    except Exception:
+
+        return None, None
+
+
+# ============================================================
+# BENEFICIO REALIZADO
+# ============================================================
+
+def calcular_beneficio_realizado(df):
+
+    """
+    Calcula únicamente operaciones cerradas.
+
+    OBJETIVO_CUMPLIDO -> beneficio
+    STOP_SALTADO      -> pérdida
+    """
+
+    beneficio = 0.0
+
+    if df.empty:
+        return beneficio
+
+    for _, row in df.iterrows():
+
+        estado = str(
+            row.get(
+                "Estado",
+                ""
+            )
+        )
+
+        precio_entrada = safe_float(
+            row.get(
+                "Precio_Alerta"
+            ),
+            100.0
+        )
+
+        stop_loss = safe_float(
+            row.get(
+                "Stop_Loss"
+            ),
+            precio_entrada * 0.96
+        )
+
+        take_profit = safe_float(
+            row.get(
+                "Take_Profit"
+            ),
+            precio_entrada * 1.10
+        )
+
+        if (
+            precio_entrada is None
+            or precio_entrada <= 0
+        ):
+            continue
+
+        pct_ganancia = (
+            take_profit -
+            precio_entrada
+        ) / precio_entrada
+
+        pct_perdida = (
+            precio_entrada -
+            stop_loss
+        ) / precio_entrada
+
+        if "OBJETIVO_CUMPLIDO" in estado:
+
+            beneficio += (
+                CAPITAL_POR_ALERTA *
+                pct_ganancia
+            )
+
+        elif "STOP_SALTADO" in estado:
+
+            beneficio -= (
+                CAPITAL_POR_ALERTA *
+                pct_perdida
+            )
+
+    return beneficio
+
+
+# ============================================================
+# BENEFICIO NO REALIZADO
+# ============================================================
+
+def calcular_beneficio_no_realizado(
+    df_activas,
+    precios_actuales
+):
+
+    """
+    Calcula el beneficio/pérdida actual de todas las posiciones
+    abiertas.
+
+    Devuelve:
+
+        beneficio_total
+        posiciones_ganadoras
+        posiciones_perdedoras
+    """
+
+    beneficio_total = 0.0
+    posiciones_ganadoras = 0
+    posiciones_perdedoras = 0
+
+    if df_activas.empty:
+        return (
+            0.0,
+            0,
+            0
+        )
+
+    for _, row in df_activas.iterrows():
+
+        ticker = str(
+            row.get(
+                "Ticker",
+                ""
+            )
+        ).strip()
+
+        if not ticker:
+            continue
+
+        precio_actual = precios_actuales.get(
+            ticker
+        )
+
+        precio_entrada = safe_float(
+            row.get(
+                "Precio_Alerta"
+            )
+        )
+
+        beneficio, porcentaje = (
+            calcular_pnl_posicion(
+                precio_actual,
+                precio_entrada
+            )
+        )
+
+        if beneficio is None:
+            continue
+
+        beneficio_total += beneficio
+
+        if beneficio > 0:
+            posiciones_ganadoras += 1
+
+        elif beneficio < 0:
+            posiciones_perdedoras += 1
+
+    return (
+        beneficio_total,
+        posiciones_ganadoras,
+        posiciones_perdedoras
+    )
+
+
+# ============================================================
+# RESULTADOS HISTÓRICOS
+# ============================================================
+
+def calcular_resultados(
+    df,
+    beneficio_no_realizado=0.0
+):
+
+    """
+    Calcula la curva de beneficio.
+
+    La parte histórica representa operaciones cerradas.
+
+    El último punto incorpora:
+
+        beneficio realizado
+        +
+        beneficio no realizado actual
+    """
+
+    beneficio_realizado = 0.0
 
     fechas_curva = []
     beneficios_curva = []
 
     if df.empty:
+
         return (
-            beneficio_acumulado,
+            beneficio_realizado,
             fechas_curva,
             beneficios_curva
         )
@@ -320,8 +646,9 @@ def calcular_resultados(df):
     df_sim = df.copy()
 
     if "Fecha" not in df_sim.columns:
+
         return (
-            beneficio_acumulado,
+            beneficio_realizado,
             fechas_curva,
             beneficios_curva
         )
@@ -333,8 +660,9 @@ def calcular_resultados(df):
     )
 
     if df_sim.empty:
+
         return (
-            beneficio_acumulado,
+            beneficio_realizado,
             fechas_curva,
             beneficios_curva
         )
@@ -360,55 +688,105 @@ def calcular_resultados(df):
             )
 
             precio_entrada = safe_float(
-                row.get("Precio_Alerta"),
+                row.get(
+                    "Precio_Alerta"
+                ),
                 100.0
             )
 
             stop_loss = safe_float(
-                row.get("Stop_Loss"),
+                row.get(
+                    "Stop_Loss"
+                ),
                 precio_entrada * 0.96
             )
 
             take_profit = safe_float(
-                row.get("Take_Profit"),
+                row.get(
+                    "Take_Profit"
+                ),
                 precio_entrada * 1.10
             )
 
-            if precio_entrada <= 0:
+            if (
+                precio_entrada is None
+                or precio_entrada <= 0
+            ):
                 continue
 
             pct_ganancia = (
-                take_profit - precio_entrada
+                take_profit -
+                precio_entrada
             ) / precio_entrada
 
             pct_perdida = (
-                precio_entrada - stop_loss
+                precio_entrada -
+                stop_loss
             ) / precio_entrada
 
             if "OBJETIVO_CUMPLIDO" in estado:
 
                 beneficio_dia += (
-                    CAPITAL_POR_ALERTA
-                    * pct_ganancia
+                    CAPITAL_POR_ALERTA *
+                    pct_ganancia
                 )
 
             elif "STOP_SALTADO" in estado:
 
                 beneficio_dia -= (
-                    CAPITAL_POR_ALERTA
-                    * pct_perdida
+                    CAPITAL_POR_ALERTA *
+                    pct_perdida
                 )
 
-        beneficio_acumulado += beneficio_dia
-
-        fechas_curva.append(fecha)
-
-        beneficios_curva.append(
-            beneficio_acumulado
+        beneficio_realizado += (
+            beneficio_dia
         )
 
+        fechas_curva.append(
+            fecha
+        )
+
+        beneficios_curva.append(
+            beneficio_realizado
+        )
+
+    # --------------------------------------------------------
+    # INCORPORAR P&L ACTUAL DE POSICIONES ABIERTAS
+    # --------------------------------------------------------
+
+    if beneficio_no_realizado != 0:
+
+        fecha_actual = (
+            datetime.now()
+            .strftime("%Y-%m-%d")
+        )
+
+        beneficio_total_actual = (
+            beneficio_realizado +
+            beneficio_no_realizado
+        )
+
+        if (
+            fechas_curva
+            and fechas_curva[-1] == fecha_actual
+        ):
+
+            beneficios_curva[-1] = (
+                beneficio_total_actual
+            )
+
+        else:
+
+            fechas_curva.append(
+                fecha_actual
+            )
+
+            beneficios_curva.append(
+                beneficio_total_actual
+            )
+
     return (
-        beneficio_acumulado,
+        beneficio_realizado,
         fechas_curva,
         beneficios_curva
     )
@@ -431,9 +809,14 @@ def calcular_performance(
         return None
 
     return (
-        (precio_actual - precio_entrada)
-        / precio_entrada
-        * 100
+        (
+            precio_actual -
+            precio_entrada
+        )
+        /
+        precio_entrada
+        *
+        100
     )
 
 
@@ -443,13 +826,16 @@ def calcular_position_percentages(
     actual,
     take_profit
 ):
+
     """
-    Calcula la posición relativa de SL / Entrada /
-    Actual / TP dentro de una escala visual.
+    Calcula la posición relativa de SL /
+    Entrada / Actual / TP dentro de una
+    escala visual.
     """
 
     values = [
-        v for v in [
+        v
+        for v in [
             stop_loss,
             entrada,
             actual,
@@ -464,7 +850,10 @@ def calcular_position_percentages(
     minimum = min(values)
     maximum = max(values)
 
-    rango = maximum - minimum
+    rango = (
+        maximum -
+        minimum
+    )
 
     if rango <= 0:
         return None
@@ -474,7 +863,10 @@ def calcular_position_percentages(
     minimum -= margen
     maximum += margen
 
-    rango = maximum - minimum
+    rango = (
+        maximum -
+        minimum
+    )
 
     def position(value):
 
@@ -482,14 +874,22 @@ def calcular_position_percentages(
             return None
 
         pct = (
-            (value - minimum)
-            / rango
-            * 100
+            (
+                value -
+                minimum
+            )
+            /
+            rango
+            *
+            100
         )
 
         return max(
             3,
-            min(97, pct)
+            min(
+                97,
+                pct
+            )
         )
 
     return {
@@ -519,59 +919,30 @@ st.markdown(
 
 :root {
 
-    --bg:
-        #f6f8fb;
+    --bg: #f6f8fb;
+    --surface: #ffffff;
+    --surface-soft: #f8fafc;
+    --surface-blue: #f2f6ff;
 
-    --surface:
-        #ffffff;
+    --border: #e7ebf2;
+    --border-soft: #eef1f5;
 
-    --surface-soft:
-        #f8fafc;
+    --text: #111827;
+    --text-secondary: #64748b;
+    --text-tertiary: #94a3b8;
 
-    --surface-blue:
-        #f2f6ff;
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --blue-soft: #eff6ff;
 
-    --border:
-        #e7ebf2;
+    --green: #16a34a;
+    --green-soft: #ecfdf3;
 
-    --border-soft:
-        #eef1f5;
+    --red: #dc2626;
+    --red-soft: #fef2f2;
 
-    --text:
-        #111827;
-
-    --text-secondary:
-        #64748b;
-
-    --text-tertiary:
-        #94a3b8;
-
-    --blue:
-        #2563eb;
-
-    --blue-dark:
-        #1d4ed8;
-
-    --blue-soft:
-        #eff6ff;
-
-    --green:
-        #16a34a;
-
-    --green-soft:
-        #ecfdf3;
-
-    --red:
-        #dc2626;
-
-    --red-soft:
-        #fef2f2;
-
-    --amber:
-        #d97706;
-
-    --amber-soft:
-        #fffbeb;
+    --amber: #d97706;
+    --amber-soft: #fffbeb;
 
     --shadow:
         0 1px 2px rgba(15,23,42,.02),
@@ -637,210 +1008,13 @@ section[data-testid="stSidebar"] {
 
 
 /* =========================================================
-   HEADER
-   ========================================================= */
-
-.topbar {
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        space-between;
-
-    margin-bottom:
-        34px;
-
-}
-
-.brand-area {
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    gap:
-        13px;
-
-}
-
-.brand-logo {
-
-    width:
-        42px;
-
-    height:
-        42px;
-
-    border-radius:
-        13px;
-
-    background:
-        linear-gradient(
-            135deg,
-            #2563eb,
-            #4f8cff
-        );
-
-    color:
-        white;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        center;
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        20px;
-
-    font-weight:
-        800;
-
-    box-shadow:
-        0 8px 20px
-        rgba(37,99,235,.20);
-
-}
-
-.brand-name {
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-weight:
-        800;
-
-    font-size:
-        16px;
-
-    color:
-        var(--text);
-
-    letter-spacing:
-        -.02em;
-
-}
-
-.brand-subtitle {
-
-    color:
-        var(--text-tertiary);
-
-    font-size:
-        11px;
-
-    margin-top:
-        1px;
-
-}
-
-.market-status {
-
-    display:
-        inline-flex;
-
-    align-items:
-        center;
-
-    gap:
-        7px;
-
-    padding:
-        8px 12px;
-
-    border:
-        1px solid
-        #dcfce7;
-
-    background:
-        #f0fdf4;
-
-    border-radius:
-        999px;
-
-    color:
-        #15803d;
-
-    font-size:
-        11px;
-
-    font-weight:
-        700;
-
-}
-
-.status-dot {
-
-    width:
-        7px;
-
-    height:
-        7px;
-
-    background:
-        #22c55e;
-
-    border-radius:
-        50%;
-
-    box-shadow:
-        0 0 0 4px
-        rgba(34,197,94,.10);
-
-}
-
-
-/* =========================================================
    HERO
    ========================================================= */
 
 .hero {
 
-    display:
-        flex;
-
-    align-items:
-        flex-end;
-
-    justify-content:
-        space-between;
-
     margin-bottom:
         25px;
-
-}
-
-.hero-kicker {
-
-    color:
-        var(--blue);
-
-    text-transform:
-        uppercase;
-
-    font-size:
-        10px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        .12em;
-
-    margin-bottom:
-        7px;
 
 }
 
@@ -980,27 +1154,11 @@ section[data-testid="stSidebar"] {
     margin-top:
         8px;
 
-    color:
-        var(--green);
-
     font-size:
         12px;
 
     font-weight:
         800;
-
-}
-
-.summary-divider {
-
-    width:
-        1px;
-
-    height:
-        45px;
-
-    background:
-        var(--border);
 
 }
 
@@ -1321,30 +1479,6 @@ section[data-testid="stSidebar"] {
 
 
 /* =========================================================
-   FILTERS
-   ========================================================= */
-
-.filter-bar {
-
-    background:
-        var(--surface);
-
-    border:
-        1px solid var(--border);
-
-    border-radius:
-        14px;
-
-    padding:
-        8px;
-
-    margin-bottom:
-        18px;
-
-}
-
-
-/* =========================================================
    ASSET CARD
    ========================================================= */
 
@@ -1387,7 +1521,9 @@ section[data-testid="stSidebar"] {
 }
 
 
-/* ASSET HEADER */
+/* =========================================================
+   ASSET HEADER
+   ========================================================= */
 
 .asset-header {
 
@@ -1404,7 +1540,7 @@ section[data-testid="stSidebar"] {
         20px;
 
     margin-bottom:
-        19px;
+        16px;
 
 }
 
@@ -1585,6 +1721,77 @@ section[data-testid="stSidebar"] {
 
     font-weight:
         800;
+
+}
+
+
+/* =========================================================
+   P&L BADGE
+   ========================================================= */
+
+.position-pnl {
+
+    display:
+        inline-flex;
+
+    align-items:
+        center;
+
+    justify-content:
+        flex-end;
+
+    gap:
+        4px;
+
+    margin-top:
+        6px;
+
+    font-size:
+        11px;
+
+    font-weight:
+        700;
+
+}
+
+.position-pnl strong {
+
+    font-family:
+        'Plus Jakarta Sans';
+
+    font-size:
+        13px;
+
+}
+
+.position-pnl.positive {
+
+    color:
+        var(--green);
+
+}
+
+.position-pnl.negative {
+
+    color:
+        var(--red);
+
+}
+
+.position-pnl.neutral {
+
+    color:
+        var(--text-secondary);
+
+}
+
+.pnl-arrow {
+
+    font-size:
+        14px;
+
+    font-weight:
+        900;
 
 }
 
@@ -1793,7 +2000,8 @@ section[data-testid="stSidebar"] {
         3px solid;
 
     box-shadow:
-        0 1px 5px rgba(15,23,42,.15);
+        0 1px 5px
+        rgba(15,23,42,.15);
 
 }
 
@@ -1827,7 +2035,8 @@ section[data-testid="stSidebar"] {
 
     box-shadow:
         0 0 0 2px var(--blue),
-        0 2px 7px rgba(37,99,235,.3);
+        0 2px 7px
+        rgba(37,99,235,.3);
 
 }
 
@@ -2439,27 +2648,6 @@ div[data-testid="stDataFrame"] {
 
     }
 
-    .topbar {
-
-        margin-bottom:
-            25px;
-
-    }
-
-    .market-status {
-
-        display:
-            none;
-
-    }
-
-    .hero {
-
-        display:
-            block;
-
-    }
-
     .hero-title {
 
         font-size:
@@ -2586,32 +2774,105 @@ metricas = calcular_metricas(
     df_hist
 )
 
-total_alertas = metricas["total_alertas"]
-exitos = metricas["exitos"]
-fallos = metricas["fallos"]
-activas = metricas["activas"]
-win_rate = metricas["win_rate"]
+total_alertas = metricas[
+    "total_alertas"
+]
+
+exitos = metricas[
+    "exitos"
+]
+
+fallos = metricas[
+    "fallos"
+]
+
+activas = metricas[
+    "activas"
+]
+
+win_rate = metricas[
+    "win_rate"
+]
 
 
 # ============================================================
-# RESULTADOS
+# POSICIONES ACTIVAS
+# ============================================================
+
+if (
+    not df_hist.empty
+    and "Estado" in df_hist.columns
+):
+
+    df_activas_global = df_hist[
+        df_hist["Estado"]
+        .astype(str)
+        .str.contains(
+            "ACTIVA",
+            na=False,
+            regex=False
+        )
+    ].copy()
+
+else:
+
+    df_activas_global = pd.DataFrame()
+
+
+# ============================================================
+# PRECIOS ACTUALES
+# ============================================================
+
+precios_actuales = obtener_precios_activos(
+    df_activas_global
+)
+
+
+# ============================================================
+# BENEFICIO REALIZADO
+# ============================================================
+
+beneficio_realizado = (
+    calcular_beneficio_realizado(
+        df_hist
+    )
+)
+
+
+# ============================================================
+# BENEFICIO NO REALIZADO
 # ============================================================
 
 (
-    beneficio_acumulado,
-    fechas_curva,
-    beneficios_curva
-) = calcular_resultados(
-    df_hist
+    beneficio_no_realizado,
+    posiciones_con_beneficio,
+    posiciones_con_perdida
+) = calcular_beneficio_no_realizado(
+    df_activas_global,
+    precios_actuales
 )
+
+
+# ============================================================
+# BENEFICIO TOTAL SIMULADO
+# ============================================================
+
+beneficio_acumulado = (
+    beneficio_realizado +
+    beneficio_no_realizado
+)
+
 
 rentabilidad_pct = (
     beneficio_acumulado
-    / CAPITAL_INICIAL
-    * 100
+    /
+    CAPITAL_INICIAL
+    *
+    100
     if CAPITAL_INICIAL
     else 0
 )
+
 
 color_resultado = (
     "#16a34a"
@@ -2621,39 +2882,16 @@ color_resultado = (
 
 
 # ============================================================
-# HEADER
+# CURVA DE RESULTADOS
 # ============================================================
 
-render_html(
-    f"""
-<div class="topbar">
-
-    <div class="brand-area">
-
-        <div class="brand-logo">
-            ◈
-        </div>
-
-        <div>
-            <div class="brand-name">
-                Alura Quant
-            </div>
-
-            <div class="brand-subtitle">
-                Investment Intelligence
-            </div>
-        </div>
-
-    </div>
-
-    <div class="market-status">
-        <span class="status-dot"></span>
-        Mercado monitorizado
-    </div>
-
-</div>
-""",
-    unsafe_allow_html=True,
+(
+    beneficio_realizado_curva,
+    fechas_curva,
+    beneficios_curva
+) = calcular_resultados(
+    df_hist,
+    beneficio_no_realizado
 )
 
 
@@ -2665,20 +2903,12 @@ render_html(
     """
 <div class="hero">
 
-    <div>
+    <h1 class="hero-title">
+        Tu radar de inversión
+    </h1>
 
-        <div class="hero-kicker">
-            ALURA QUANT INTELLIGENCE
-        </div>
-
-        <h1 class="hero-title">
-            Tu radar de inversión
-        </h1>
-
-        <div class="hero-subtitle">
-            Señales cuantitativas, cartera y resultados en un solo lugar.
-        </div>
-
+    <div class="hero-subtitle">
+        Señales cuantitativas, cartera y resultados en un solo lugar.
     </div>
 
 </div>
@@ -2701,7 +2931,10 @@ render_html(
             Beneficio acumulado simulado
         </div>
 
-        <div class="summary-value">
+        <div
+            class="summary-value"
+            style="color:{color_resultado};"
+        >
             {beneficio_acumulado:+,.2f} €
         </div>
 
@@ -2710,7 +2943,10 @@ render_html(
             style="color:{color_resultado};"
         >
             {"▲" if beneficio_acumulado >= 0 else "▼"}
-            {rentabilidad_pct:+.2f}% de rentabilidad
+
+            {rentabilidad_pct:+.2f}%
+            de rentabilidad
+
         </div>
 
     </div>
@@ -2739,6 +2975,15 @@ render_html(
             {activas}
         </div>
 
+        <div style="
+            margin-top:4px;
+            color:#16a34a;
+            font-size:10px;
+            font-weight:700;
+        ">
+            {posiciones_con_beneficio} en beneficio
+        </div>
+
     </div>
 
 
@@ -2750,6 +2995,15 @@ render_html(
 
         <div class="summary-stat-value">
             {win_rate:.1f}%
+        </div>
+
+        <div style="
+            margin-top:4px;
+            color:#94a3b8;
+            font-size:10px;
+            font-weight:600;
+        ">
+            {exitos} TP · {fallos} SL
         </div>
 
     </div>
@@ -2798,7 +3052,7 @@ render_html(
         <div class="kpi-head">
 
             <div class="kpi-title">
-                Señales emitidas
+                Señales activas
             </div>
 
             <div class="kpi-icon">
@@ -2808,11 +3062,12 @@ render_html(
         </div>
 
         <div class="kpi-value">
-            {total_alertas}
+            {activas}
         </div>
 
         <div class="kpi-description">
-            Histórico completo
+            {posiciones_con_beneficio} en beneficio ·
+            {posiciones_con_perdida} en pérdida
         </div>
 
     </div>
@@ -2854,27 +3109,39 @@ render_html(
         <div class="kpi-head">
 
             <div class="kpi-title">
-                Win Rate
+                Beneficio acumulado
             </div>
 
             <div
                 class="kpi-icon"
                 style="
-                    background:#f0fdf4;
-                    color:#16a34a;
+                    background:
+                        {"#ecfdf3"
+                        if beneficio_acumulado >= 0
+                        else "#fef2f2"};
+
+                    color:
+                        {"#16a34a"
+                        if beneficio_acumulado >= 0
+                        else "#dc2626"};
                 "
             >
-                %
+                €
             </div>
 
         </div>
 
-        <div class="kpi-value">
-            {win_rate:.1f}%
+        <div
+            class="kpi-value"
+            style="
+                color:{color_resultado};
+            "
+        >
+            {beneficio_acumulado:+,.2f} €
         </div>
 
         <div class="kpi-description">
-            Operaciones cerradas
+            {rentabilidad_pct:+.2f}% retorno simulado
         </div>
 
     </div>
@@ -2956,15 +3223,7 @@ with tab_cartera:
     )
 
 
-    df_activas = df_hist[
-        df_hist["Estado"]
-        .astype(str)
-        .str.contains(
-            "ACTIVA",
-            na=False,
-            regex=False
-        )
-    ].copy()
+    df_activas = df_activas_global.copy()
 
 
     if df_activas.empty:
@@ -3013,7 +3272,9 @@ with tab_cartera:
                     .tolist()
                 )
 
-                sectores = sorted(sectores)
+                sectores = sorted(
+                    sectores
+                )
 
             else:
 
@@ -3043,19 +3304,23 @@ with tab_cartera:
         # FILTRAR
         # ----------------------------------------------------
 
-        df_filtrada = df_activas.copy()
+        df_filtrada = (
+            df_activas.copy()
+        )
 
 
         if (
             filtro_sector
             != "Todos los sectores"
-            and "Sector" in df_filtrada.columns
+            and "Sector"
+            in df_filtrada.columns
         ):
 
             df_filtrada = df_filtrada[
                 df_filtrada["Sector"]
                 .astype(str)
-                == filtro_sector
+                ==
+                filtro_sector
             ]
 
 
@@ -3076,7 +3341,9 @@ with tab_cartera:
                 .any(axis=1)
             )
 
-            df_filtrada = df_filtrada[mask]
+            df_filtrada = (
+                df_filtrada[mask]
+            )
 
 
         # ----------------------------------------------------
@@ -3121,12 +3388,23 @@ with tab_cartera:
             )
 
             ticker = safe_text(
-                row.get("Ticker"),
+                row.get(
+                    "Ticker"
+                ),
                 ""
             )
 
+            ticker_raw = str(
+                row.get(
+                    "Ticker",
+                    ""
+                )
+            ).strip()
+
             sector = safe_text(
-                row.get("Sector"),
+                row.get(
+                    "Sector"
+                ),
                 "Mercado Continuo"
             )
 
@@ -3147,17 +3425,21 @@ with tab_cartera:
                     fecha_alerta = (
                         row["Fecha"]
                         .to_pydatetime()
-                        .replace(tzinfo=None)
+                        .replace(
+                            tzinfo=None
+                        )
                     )
 
                     delta = (
                         datetime.now()
-                        - fecha_alerta
+                        -
+                        fecha_alerta
                     )
 
                     if delta <= timedelta(
                         hours=48
                     ):
+
                         es_nuevo = True
 
                 except Exception:
@@ -3165,7 +3447,9 @@ with tab_cartera:
 
 
             badge_nuevo = (
-                '<div class="new-badge">✦ NUEVO</div>'
+                '<div class="new-badge">'
+                '✦ NUEVO'
+                '</div>'
                 if es_nuevo
                 else ""
             )
@@ -3175,15 +3459,8 @@ with tab_cartera:
             # PRECIOS
             # ------------------------------------------------
 
-            ticker_raw = str(
-                row.get(
-                    "Ticker",
-                    ""
-                )
-            ).strip()
-
             precio_actual = (
-                obtener_precio_actual(
+                precios_actuales.get(
                     ticker_raw
                 )
                 if ticker_raw
@@ -3214,6 +3491,96 @@ with tab_cartera:
                     "Ratio_RR"
                 )
             )
+
+
+            # ------------------------------------------------
+            # P&L ACTUAL DE LA POSICIÓN
+            # ------------------------------------------------
+
+            (
+                beneficio_posicion,
+                porcentaje_posicion
+            ) = calcular_pnl_posicion(
+                precio_actual,
+                precio_entrada
+            )
+
+
+            if beneficio_posicion is None:
+
+                pnl_text = "—"
+
+                pnl_badge = """
+<div class="position-pnl neutral">
+    <span>Sin datos</span>
+</div>
+"""
+
+            elif beneficio_posicion > 0:
+
+                pnl_text = (
+                    f"+{beneficio_posicion:,.2f} €"
+                )
+
+                pnl_badge = f"""
+<div class="position-pnl positive">
+
+    <span class="pnl-arrow">
+        ↗
+    </span>
+
+    <strong>
+        +{beneficio_posicion:,.2f} €
+    </strong>
+
+    <span>
+        ({porcentaje_posicion:+.2f}%)
+    </span>
+
+</div>
+"""
+
+            elif beneficio_posicion < 0:
+
+                pnl_text = (
+                    f"{beneficio_posicion:,.2f} €"
+                )
+
+                pnl_badge = f"""
+<div class="position-pnl negative">
+
+    <span class="pnl-arrow">
+        ↘
+    </span>
+
+    <strong>
+        {beneficio_posicion:,.2f} €
+    </strong>
+
+    <span>
+        ({porcentaje_posicion:+.2f}%)
+    </span>
+
+</div>
+"""
+
+            else:
+
+                pnl_text = "0,00 €"
+
+                pnl_badge = """
+<div class="position-pnl neutral">
+
+    <strong>
+        0,00 €
+    </strong>
+
+    <span>
+        (0,00%)
+    </span>
+
+</div>
+"""
 
 
             # ------------------------------------------------
@@ -3265,25 +3632,29 @@ with tab_cartera:
 
                 sl_pct = (
                     positions["sl"]
-                    if positions["sl"] is not None
+                    if positions["sl"]
+                    is not None
                     else 0
                 )
 
                 entry_pct = (
                     positions["entry"]
-                    if positions["entry"] is not None
+                    if positions["entry"]
+                    is not None
                     else 25
                 )
 
                 current_pct = (
                     positions["current"]
-                    if positions["current"] is not None
+                    if positions["current"]
+                    is not None
                     else entry_pct
                 )
 
                 tp_pct = (
                     positions["tp"]
-                    if positions["tp"] is not None
+                    if positions["tp"]
+                    is not None
                     else 100
                 )
 
@@ -3293,12 +3664,14 @@ with tab_cartera:
                         entry_pct,
                         current_pct
                     )
-                    - sl_pct
+                    -
+                    sl_pct
                 )
 
                 reward_left = (
                     tp_pct
-                    - max(
+                    -
+                    max(
                         entry_pct,
                         current_pct
                     )
@@ -3360,22 +3733,30 @@ with tab_cartera:
 
         <div
             class="position-marker marker-sl"
-            style="left:{sl_pct:.2f}%"
+            style="
+                left:{sl_pct:.2f}%;
+            "
         ></div>
 
         <div
             class="position-marker marker-entry"
-            style="left:{entry_pct:.2f}%"
+            style="
+                left:{entry_pct:.2f}%;
+            "
         ></div>
 
         <div
             class="position-marker marker-current"
-            style="left:{current_pct:.2f}%"
+            style="
+                left:{current_pct:.2f}%;
+            "
         ></div>
 
         <div
             class="position-marker marker-tp"
-            style="left:{tp_pct:.2f}%"
+            style="
+                left:{tp_pct:.2f}%;
+            "
         ></div>
 
     </div>
@@ -3384,31 +3765,58 @@ with tab_cartera:
     <div class="position-values">
 
         <div class="position-value">
+
             Stop Loss
+
             <strong>
-                {formatear_numero(stop_loss, 2)}
+                {formatear_numero(
+                    stop_loss,
+                    2
+                )}
             </strong>
+
         </div>
 
+
         <div class="position-value">
+
             Entrada
+
             <strong>
-                {formatear_numero(precio_entrada, 2)}
+                {formatear_numero(
+                    precio_entrada,
+                    2
+                )}
             </strong>
+
         </div>
 
+
         <div class="position-value">
+
             Actual
+
             <strong>
-                {formatear_numero(precio_actual, 2)}
+                {formatear_numero(
+                    precio_actual,
+                    2
+                )}
             </strong>
+
         </div>
 
+
         <div class="position-value">
+
             Take Profit
+
             <strong>
-                {formatear_numero(take_profit, 2)}
+                {formatear_numero(
+                    take_profit,
+                    2
+                )}
             </strong>
+
         </div>
 
     </div>
@@ -3443,10 +3851,12 @@ with tab_cartera:
             # TESIS IA
             # ------------------------------------------------
 
-            analisis_ia = formatear_tesis_ia(
-                row.get(
-                    "Analisis_IA",
-                    ""
+            analisis_ia = (
+                formatear_tesis_ia(
+                    row.get(
+                        "Analisis_IA",
+                        ""
+                    )
                 )
             )
 
@@ -3470,11 +3880,13 @@ with tab_cartera:
             <div>
 
                 <div class="asset-company">
+
                     {empresa}
 
                     <span class="asset-ticker">
                         {ticker}
                     </span>
+
                 </div>
 
                 <div class="asset-sector">
@@ -3498,6 +3910,8 @@ with tab_cartera:
                 Precio actual
             </div>
 
+            {pnl_badge}
+
         </div>
 
     </div>
@@ -3510,7 +3924,15 @@ with tab_cartera:
         </div>
 
         <div class="performance-value {performance_class}">
+
             {performance_text}
+
+            {
+                f" · {pnl_text}"
+                if beneficio_posicion is not None
+                else ""
+            }
+
         </div>
 
     </div>
@@ -3528,7 +3950,10 @@ with tab_cartera:
             </div>
 
             <div class="param-value">
-                {formatear_numero(precio_entrada, 2)}
+                {formatear_numero(
+                    precio_entrada,
+                    2
+                )}
             </div>
 
         </div>
@@ -3542,9 +3967,14 @@ with tab_cartera:
 
             <div
                 class="param-value"
-                style="color:#dc2626;"
+                style="
+                    color:#dc2626;
+                "
             >
-                {formatear_numero(stop_loss, 2)}
+                {formatear_numero(
+                    stop_loss,
+                    2
+                )}
             </div>
 
         </div>
@@ -3558,9 +3988,14 @@ with tab_cartera:
 
             <div
                 class="param-value"
-                style="color:#16a34a;"
+                style="
+                    color:#16a34a;
+                "
             >
-                {formatear_numero(take_profit, 2)}
+                {formatear_numero(
+                    take_profit,
+                    2
+                )}
             </div>
 
         </div>
@@ -3574,7 +4009,9 @@ with tab_cartera:
 
             <div
                 class="param-value"
-                style="color:#2563eb;"
+                style="
+                    color:#2563eb;
+                "
             >
                 {ratio_rr_text}
             </div>
@@ -3619,7 +4056,7 @@ with tab_resultados:
         </div>
 
         <div class="section-subtitle">
-            Evolución histórica de las señales cerradas.
+            Beneficio realizado + valoración actual de posiciones abiertas.
         </div>
 
     </div>
@@ -3655,7 +4092,7 @@ with tab_resultados:
             </div>
 
             <div class="result-subtitle">
-                Curva de rendimiento histórico simulado
+                Resultado simulado de la cartera
             </div>
 
         </div>
@@ -3665,16 +4102,43 @@ with tab_resultados:
 
             <div
                 class="result-number"
-                style="color:{color_resultado};"
+                style="
+                    color:{color_resultado};
+                "
             >
                 {beneficio_acumulado:+,.2f} €
             </div>
 
             <div class="result-percent">
-                {rentabilidad_pct:+.2f}% de retorno
+
+                {rentabilidad_pct:+.2f}%
+                de retorno
+
             </div>
 
         </div>
+
+    </div>
+
+
+    <div style="
+        display:flex;
+        gap:16px;
+        font-size:10px;
+        color:#94a3b8;
+        font-weight:600;
+        margin-bottom:3px;
+    ">
+
+        <span>
+            ● Realizado:
+            {beneficio_realizado:+,.2f} €
+        </span>
+
+        <span>
+            ● Abierto:
+            {beneficio_no_realizado:+,.2f} €
+        </span>
 
     </div>
 
@@ -3740,6 +4204,7 @@ with tab_resultados:
 
     <div class="metric-list">
 
+
         <div class="metric-row">
 
             <span class="metric-name">
@@ -3748,9 +4213,29 @@ with tab_resultados:
 
             <span
                 class="metric-value"
-                style="color:#2563eb;"
+                style="
+                    color:#2563eb;
+                "
             >
                 {activas}
+            </span>
+
+        </div>
+
+
+        <div class="metric-row">
+
+            <span class="metric-name">
+                Posiciones en beneficio
+            </span>
+
+            <span
+                class="metric-value"
+                style="
+                    color:#16a34a;
+                "
+            >
+                {posiciones_con_beneficio}
             </span>
 
         </div>
@@ -3764,7 +4249,9 @@ with tab_resultados:
 
             <span
                 class="metric-value"
-                style="color:#16a34a;"
+                style="
+                    color:#16a34a;
+                "
             >
                 {exitos}
             </span>
@@ -3780,7 +4267,9 @@ with tab_resultados:
 
             <span
                 class="metric-value"
-                style="color:#dc2626;"
+                style="
+                    color:#dc2626;
+                "
             >
                 {fallos}
             </span>
@@ -3804,11 +4293,16 @@ with tab_resultados:
         <div class="metric-row">
 
             <span class="metric-name">
-                Capital simulado
+                Beneficio realizado
             </span>
 
-            <span class="metric-value">
-                {CAPITAL_INICIAL:,.0f} €
+            <span
+                class="metric-value"
+                style="
+                    color:{color_resultado};
+                "
+            >
+                {beneficio_realizado:+,.2f} €
             </span>
 
         </div>
@@ -3817,14 +4311,51 @@ with tab_resultados:
         <div class="metric-row">
 
             <span class="metric-name">
-                Beneficio acumulado
+                P&L posiciones abiertas
             </span>
 
             <span
                 class="metric-value"
-                style="color:{color_resultado};"
+                style="
+                    color:{
+                        '#16a34a'
+                        if beneficio_no_realizado >= 0
+                        else '#dc2626'
+                    };
+                "
+            >
+                {beneficio_no_realizado:+,.2f} €
+            </span>
+
+        </div>
+
+
+        <div class="metric-row">
+
+            <span class="metric-name">
+                Beneficio total simulado
+            </span>
+
+            <span
+                class="metric-value"
+                style="
+                    color:{color_resultado};
+                "
             >
                 {beneficio_acumulado:+,.2f} €
+            </span>
+
+        </div>
+
+
+        <div class="metric-row">
+
+            <span class="metric-name">
+                Capital simulado
+            </span>
+
+            <span class="metric-value">
+                {CAPITAL_INICIAL:,.0f} €
             </span>
 
         </div>
@@ -3905,18 +4436,23 @@ with tab_historial:
             )
 
 
-        df_view = df_cerradas.copy()
+        df_view = (
+            df_cerradas.copy()
+        )
 
 
         if (
             filtro_est
-            and "Estado" in df_view.columns
+            and "Estado"
+            in df_view.columns
         ):
 
             df_view = df_view[
                 df_view["Estado"]
                 .astype(str)
-                .isin(filtro_est)
+                .isin(
+                    filtro_est
+                )
             ]
 
 
@@ -3937,7 +4473,9 @@ with tab_historial:
                 .any(axis=1)
             )
 
-            df_view = df_view[mask_h]
+            df_view = (
+                df_view[mask_h]
+            )
 
 
         render_html(
