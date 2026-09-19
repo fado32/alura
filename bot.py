@@ -1,4 +1,3 @@
-# ALURA QUANT V4 (Optimizado para Universos Masivos / 1000+ Tickers)
 import csv, os, subprocess
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
