@@ -5,7 +5,7 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# ALURA QUANT — LIGHT FINTECH UI (ULTRA CLEAN & BRIGHT)
+# ALURA QUANT — LIGHT FINTECH UI (V5.3 MOBILE CLEAN)
 # ============================================================
 st.set_page_config(
     page_title="Alura Quant",
@@ -71,7 +71,7 @@ def formatear_tesis_ia(texto):
     return texto_html.strip()
 
 # ============================================================
-# DESIGN SYSTEM — PURE LIGHT & BRIGHT FINTECH STYLING
+# DESIGN SYSTEM — PREMIUM FINTECH STYLING (BADGE REPOSITIONED)
 # ============================================================
 st.markdown(
     """
@@ -79,20 +79,20 @@ st.markdown(
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap');
 
 :root {
-    --bg-app: #f4f6f9;
+    --bg-app: #f8fafc;
     --card-bg: #ffffff;
-    --border-subtle: #e5e9f0;
-    --text-main: #090d16;
-    --text-muted: #53627d;
-    --brand-blue: #1d4ed8;
-    --brand-blue-hover: #1e40af;
+    --border-subtle: #e2e8f0;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --brand-blue: #2563eb;
+    --brand-blue-hover: #1d4ed8;
     --brand-blue-light: #eff6ff;
-    --success: #15803d;
+    --success: #16a34a;
     --success-light: #f0fdf4;
-    --danger: #b91c1c;
+    --danger: #dc2626;
     --danger-light: #fef2f2;
-    --shadow-card: 0 2px 12px -2px rgba(9, 13, 22, 0.04);
-    --shadow-hover: 0 8px 20px -4px rgba(9, 13, 22, 0.08);
+    --shadow-card: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+    --shadow-hover: 0 10px 25px -5px rgba(15, 23, 42, 0.08);
 }
 
 html, body, [class*="css"] {
@@ -119,7 +119,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 .brand-kicker {
     font-family: 'Plus Jakarta Sans', sans-serif;
@@ -132,7 +132,7 @@ html, body, [class*="css"] {
 }
 .main-title {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 800;
     color: var(--text-main);
     letter-spacing: -0.03em;
@@ -155,7 +155,7 @@ html, body, [class*="css"] {
     background: var(--card-bg);
     border: 1px solid var(--border-subtle);
     border-radius: 16px;
-    padding: 18px 20px;
+    padding: 16px 20px;
     box-shadow: var(--shadow-card);
     transition: all 0.2s ease;
     display: flex;
@@ -175,6 +175,7 @@ html, body, [class*="css"] {
     letter-spacing: 0.08em;
     color: var(--text-muted);
     margin-bottom: 4px;
+    line-height: 1.3;
 }
 .kpi-val {
     font-family: 'Plus Jakarta Sans', sans-serif;
@@ -250,7 +251,7 @@ html, body, [class*="css"] {
     margin-top: 2px;
 }
 
-/* BADGE DE NUEVO */
+/* BADGE DE NUEVO REUBICADO (ARRIBA A LA DERECHA) */
 .badge-new {
     background: #dcfce7;
     color: #15803d;
@@ -330,15 +331,37 @@ html, body, [class*="css"] {
     color: #334155;
 }
 
-/* BOTONES DE NAVEGACIÓN SUPERIOR */
-div.stButton > button {
-    width: 100%;
-    border-radius: 12px !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
-    font-weight: 700 !important;
-    font-size: 13px !important;
-    height: 42px !important;
+/* ESTILOS DE TABS PERSONALIZADOS */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 6px !important;
+    background: #e2e8f0 !important;
+    border-radius: 14px !important;
+    padding: 5px !important;
+    margin-bottom: 24px !important;
+    display: inline-flex !important;
+}
+.stTabs button[data-baseweb="tab"] {
+    height: 40px !important;
+    color: var(--text-muted) !important;
+    background: transparent !important;
+    border: 0 !important;
+    border-radius: 10px !important;
+    padding: 0 20px !important;
     transition: all 0.2s ease !important;
+}
+.stTabs button[data-baseweb="tab"] p {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+}
+.stTabs button[aria-selected="true"] {
+    color: var(--brand-blue) !important;
+    background: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+}
+.stTabs button[aria-selected="true"] p {
+    color: var(--brand-blue) !important;
+    font-weight: 800 !important;
 }
 
 /* FOOTER */
@@ -349,15 +372,23 @@ div.stButton > button {
     margin-top: 48px;
     padding-top: 20px;
     border-top: 1px solid var(--border-subtle);
-    color: var(--text-muted);
+    color: #94a3b8;
     font-size: 11px;
     font-weight: 500;
 }
 
+/* MEDIA QUERIES PARA MÓVILES */
 @media (max-width: 900px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .params-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .block-container { padding-top: 1rem; padding-left: 1rem; padding-right: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .kpi-val { font-size: 24px !important; }
+    .asset-card { padding: 16px; }
+    .price-val-big { font-size: 16px; }
+    .asset-name { font-size: 15px; }
 }
 </style>
 """,
@@ -365,7 +396,7 @@ div.stButton > button {
 )
 
 # ============================================================
-# CARGA Y PREPARACIÓN DE DATOS
+# DATA PREPARATION & LOAD
 # ============================================================
 def preparar_fecha(df):
     df = df.copy()
@@ -424,7 +455,7 @@ render_html(
     <div>
         <div class="brand-kicker">Alura Quant Intelligence</div>
         <h1 class="main-title">Tu Radar de Inversión</h1>
-        <div class="main-subtitle">Señales cuantitativas, cartera y resultados en tiempo real</div>
+        <div class="main-subtitle">Señales cuantitativas, cartera y resultados</div>
     </div>
 </div>
 """,
@@ -460,36 +491,16 @@ if df_hist.empty:
     st.stop()
 
 # ============================================================
-# NAVEGACIÓN SUPERIOR MODERNA
+# NAVEGACIÓN PRINCIPAL (TABS)
 # ============================================================
-if "seccion_activa" not in st.session_state:
-    st.session_state.seccion_activa = "Cartera"
-
-col_nav1, col_nav2, col_nav3, col_nav_space = st.columns([1.2, 1.2, 1.2, 4])
-
-with col_nav1:
-    btn_cartera = st.button("💼 Cartera", use_container_width=True, type="primary" if st.session_state.seccion_activa == "Cartera" else "secondary")
-with col_nav2:
-    btn_resultados = st.button("📊 Resultados", use_container_width=True, type="primary" if st.session_state.seccion_activa == "Resultados" else "secondary")
-with col_nav3:
-    btn_historico = st.button("📜 Histórico", use_container_width=True, type="primary" if st.session_state.seccion_activa == "Histórico" else "secondary")
-
-if btn_cartera:
-    st.session_state.seccion_activa = "Cartera"
-    st.rerun()
-elif btn_resultados:
-    st.session_state.seccion_activa = "Resultados"
-    st.rerun()
-elif btn_historico:
-    st.session_state.seccion_activa = "Histórico"
-    st.rerun()
-
-st.markdown("<div style='margin-top: 16px;'></div>", unsafe_allow_html=True)
+tab_cartera, tab_resultados, tab_historial = st.tabs(
+    ["💼  Cartera", "📊  Resultados", "📜  Histórico"]
+)
 
 # ============================================================
-# 1. SECCIÓN CARTERA
+# 1. PESTAÑA CARTERA
 # ============================================================
-if st.session_state.seccion_activa == "Cartera":
+with tab_cartera:
     df_activas = df_hist[
         df_hist["Estado"].astype(str).str.contains("ACTIVA", na=False)
     ].copy()
@@ -528,6 +539,7 @@ if st.session_state.seccion_activa == "Cartera":
                 except Exception:
                     pass
 
+            # Badge reubicado a la zona superior derecha junto al precio actual
             badge_nuevo_html = '<span class="badge-new">✨ NUEVO</span>' if es_nuevo else ''
 
             precio_actual_val = obtener_precio_actual(ticker)
@@ -579,7 +591,7 @@ if st.session_state.seccion_activa == "Cartera":
                 
                 <div class="ai-comment-box">
                     <strong style="color: var(--brand-blue); display:block; margin-bottom:4px; font-size:11px; text-transform:uppercase; letter-spacing:0.05em;">
-                        💡 Tesis del Analista Cuantitativo
+                        💡 Tesis del Analista
                     </strong>
                     {analisis_ia}
                 </div>
@@ -589,13 +601,13 @@ if st.session_state.seccion_activa == "Cartera":
             )
 
 # ============================================================
-# 2. SECCIÓN RESULTADOS
+# 2. PESTAÑA RESULTADOS
 # ============================================================
-elif st.session_state.seccion_activa == "Resultados":
+with tab_resultados:
     col_g1, col_g2 = st.columns([1.3, 0.7], gap="large")
 
-    capital_inicial = 10000.0
-    capital_por_alerta = 1000.0
+    capital_inicial = 3000.0
+    capital_por_alerta = 300.0
     beneficio_acumulado = 0.0
     fechas_curva, beneficios_curva = [], []
 
@@ -683,9 +695,9 @@ elif st.session_state.seccion_activa == "Resultados":
         )
 
 # ============================================================
-# 3. SECCIÓN HISTÓRICO
+# 3. PESTAÑA HISTÓRICO
 # ============================================================
-elif st.session_state.seccion_activa == "Histórico":
+with tab_historial:
     render_html(
         """
         <div class="asset-card" style="margin-bottom: 16px;">
