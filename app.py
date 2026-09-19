@@ -5,7 +5,7 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# ALURA QUANT — LIGHT FINTECH UI (V5 PROFESIONAL)
+# ALURA QUANT — LIGHT FINTECH UI (V5.1 PROFESIONAL)
 # ============================================================
 st.set_page_config(
     page_title="Alura Quant",
@@ -66,13 +66,12 @@ def formatear_tesis_ia(texto):
     if not isinstance(texto, str):
         return "Sin análisis disponible."
     import re
-    # Eliminar títulos automáticos por si el modelo los generó antes
     texto = texto.replace("Análisis técnico de", "").replace("Indicadores clave:", "")
     texto_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', texto)
     return texto_html.strip()
 
 # ============================================================
-# DESIGN SYSTEM — PREMIUM FINTECH STYLING
+# DESIGN SYSTEM — PREMIUM FINTECH STYLING (ACTUALIZADO)
 # ============================================================
 st.markdown(
     """
@@ -111,7 +110,7 @@ html, body, [class*="css"] {
 
 .block-container {
     max-width: 1320px;
-    padding-top: 2.5rem;
+    padding-top: 2rem;
     padding-bottom: 4rem;
 }
 
@@ -120,7 +119,7 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 }
 .brand-kicker {
     font-family: 'Plus Jakarta Sans', sans-serif;
@@ -129,36 +128,39 @@ html, body, [class*="css"] {
     text-transform: uppercase;
     letter-spacing: 0.1em;
     color: var(--brand-blue);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
 }
 .main-title {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 28px;
+    font-size: 26px;
     font-weight: 800;
     color: var(--text-main);
     letter-spacing: -0.03em;
     margin: 0;
 }
 .main-subtitle {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-muted);
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
-/* KPI CARDS (LOOK & FEEL PROFESIONAL) */
+/* KPI CARDS (MÁS COMPACTAS Y CON VALORES AMPLIADOS) */
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 16px;
-    margin-bottom: 32px;
+    margin-bottom: 28px;
 }
 .kpi-card {
     background: var(--card-bg);
     border: 1px solid var(--border-subtle);
     border-radius: 16px;
-    padding: 20px 22px;
+    padding: 16px 20px; /* Altura más compacta */
     box-shadow: var(--shadow-card);
     transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 .kpi-card:hover {
     transform: translateY(-2px);
@@ -166,19 +168,20 @@ html, body, [class*="css"] {
     border-color: #cbd5e1;
 }
 .kpi-title {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-muted);
+    margin-bottom: 4px;
 }
 .kpi-val {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 26px;
+    font-size: 30px; /* Letra de valores más grande y rotunda */
     font-weight: 800;
     color: var(--text-main);
-    margin-top: 8px;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
 }
 
 /* CARTERA / ASSET CARDS */
@@ -448,7 +451,7 @@ render_html(
     </div>
     <div class="kpi-card">
         <div class="kpi-title">Beneficio</div>
-        <div class="kpi-val" style="font-size: 21px;">{win_rate:.1f}% <span style="font-size: 13px; font-weight: 700; color: {color_rentabilidad}; margin-left: 2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
+        <div class="kpi-val" style="font-size: 23px;">{win_rate:.1f}% <span style="font-size: 13px; font-weight: 700; color: {color_rentabilidad}; margin-left: 2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
     </div>
 </div>
 """,
