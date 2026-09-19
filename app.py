@@ -815,8 +815,7 @@ def calcular_position_percentages(
             )
             /
             rango
-            *
-            100
+            * 100
         )
 
         return max(
@@ -903,6 +902,10 @@ body,
 
 }
 
+html {
+    scroll-behavior: smooth;
+}
+
 .stApp {
 
     background:
@@ -938,6 +941,88 @@ section[data-testid="stSidebar"] {
 
     padding-right:
         38px;
+
+}
+
+
+/* =========================================================
+   SCROLL TO TOP
+   ========================================================= */
+
+.scroll-top {
+
+    position:
+        fixed;
+
+    right:
+        24px;
+
+    bottom:
+        24px;
+
+    width:
+        42px;
+
+    height:
+        42px;
+
+    display:
+        flex;
+
+    align-items:
+        center;
+
+    justify-content:
+        center;
+
+    background:
+        var(--surface);
+
+    color:
+        var(--blue);
+
+    border:
+        1px solid var(--border);
+
+    border-radius:
+        12px;
+
+    box-shadow:
+        0 8px 25px rgba(15,23,42,.12);
+
+    text-decoration:
+        none;
+
+    font-family:
+        'Plus Jakarta Sans';
+
+    font-size:
+        18px;
+
+    font-weight:
+        800;
+
+    z-index:
+        9999;
+
+    transition:
+        all .2s ease;
+
+}
+
+.scroll-top:hover {
+
+    transform:
+        translateY(-3px);
+
+    background:
+        var(--blue);
+
+    color:
+        white;
+
+    border-color:
+        var(--blue);
 
 }
 
@@ -1300,6 +1385,34 @@ section[data-testid="stSidebar"] {
 
 }
 
+.asset-left {
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    align-items:
+        flex-start;
+
+    min-width:
+        0;
+
+    flex: 1;
+
+}
+
+.asset-new-row {
+
+    min-height:
+        20px;
+
+    margin-bottom:
+        5px;
+
+}
+
 .asset-identity {
 
     display:
@@ -1400,6 +1513,12 @@ section[data-testid="stSidebar"] {
     text-align:
         right;
 
+    flex-shrink:
+        0;
+
+    padding-top:
+        25px;
+
 }
 
 .new-badge {
@@ -1436,9 +1555,6 @@ section[data-testid="stSidebar"] {
 
     letter-spacing:
         .07em;
-
-    margin-bottom:
-        5px;
 
 }
 
@@ -1654,13 +1770,13 @@ section[data-testid="stSidebar"] {
 .position-labels {
 
     display:
-        flex;
+        grid;
 
-    justify-content:
-        space-between;
+    grid-template-columns:
+        repeat(4, 1fr);
 
-    align-items:
-        flex-start;
+    gap:
+        8px;
 
     margin-bottom:
         3px;
@@ -1675,11 +1791,42 @@ section[data-testid="stSidebar"] {
     flex-direction:
         column;
 
-    align-items:
-        center;
+    gap:
+        2px;
 
     min-width:
         0;
+
+}
+
+.position-label-item:nth-child(1) {
+
+    text-align:
+        left;
+
+    align-items:
+        flex-start;
+
+}
+
+.position-label-item:nth-child(2),
+.position-label-item:nth-child(3) {
+
+    text-align:
+        center;
+
+    align-items:
+        center;
+
+}
+
+.position-label-item:nth-child(4) {
+
+    text-align:
+        right;
+
+    align-items:
+        flex-end;
 
 }
 
@@ -2420,10 +2567,33 @@ div[data-testid="stDataFrame"] {
 
     }
 
+    .asset-icon {
+
+        width:
+            42px;
+
+        height:
+            42px;
+
+        min-width:
+            42px;
+
+        font-size:
+            18px;
+
+    }
+
     .current-price {
 
         font-size:
             18px;
+
+    }
+
+    .asset-right {
+
+        padding-top:
+            25px;
 
     }
 
@@ -2462,6 +2632,25 @@ div[data-testid="stDataFrame"] {
 
         font-size:
             9px;
+
+    }
+
+    .scroll-top {
+
+        right:
+            14px;
+
+        bottom:
+            14px;
+
+        width:
+            38px;
+
+        height:
+            38px;
+
+        border-radius:
+            11px;
 
     }
 
@@ -2583,7 +2772,6 @@ beneficio_acumulado = (
     beneficio_no_realizado
 )
 
-# Capital inicial escalable basado en el número total de operaciones históricas o al menos 3600€
 total_operaciones_historicas = max(
     1,
     len(df_hist)
@@ -2628,6 +2816,18 @@ color_resultado = (
 
 
 # ============================================================
+# ANCLA SUPERIOR
+# ============================================================
+
+render_html(
+    """
+<div id="top"></div>
+""",
+    unsafe_allow_html=True,
+)
+
+
+# ============================================================
 # HERO
 # ============================================================
 
@@ -2657,8 +2857,6 @@ render_html(
     f"""
 <div class="portfolio-summary">
 
-    <!-- BENEFICIO TOTAL -->
-
     <div class="summary-card">
 
         <div class="summary-label">
@@ -2678,8 +2876,6 @@ render_html(
 
     </div>
 
-
-    <!-- RENTABILIDAD -->
 
     <div class="summary-card">
 
@@ -2701,8 +2897,6 @@ render_html(
     </div>
 
 
-    <!-- POSICIONES ACTIVAS -->
-
     <div class="summary-card">
 
         <div class="summary-label">
@@ -2719,8 +2913,6 @@ render_html(
 
     </div>
 
-
-    <!-- WIN RATE -->
 
     <div class="summary-card">
 
@@ -3039,9 +3231,9 @@ with tab_cartera:
 
 
             badge_nuevo = (
-                '<div class="new-badge">'
+                '<span class="new-badge">'
                 '✦ NUEVO'
-                '</div>'
+                '</span>'
                 if es_nuevo
                 else ""
             )
@@ -3394,26 +3586,39 @@ with tab_cartera:
 
     <div class="asset-header">
 
-        <div class="asset-identity">
+        <!-- IZQUIERDA: NUEVO + IDENTIDAD -->
 
-            <div class="asset-icon">
-                {icono}
+        <div class="asset-left">
+
+            <div class="asset-new-row">
+
+                {badge_nuevo}
+
             </div>
 
-            <div>
 
-                <div class="asset-company">
+            <div class="asset-identity">
 
-                    {empresa}
-
-                    <span class="asset-ticker">
-                        {ticker}
-                    </span>
-
+                <div class="asset-icon">
+                    {icono}
                 </div>
 
-                <div class="asset-sector">
-                    {sector}
+                <div>
+
+                    <div class="asset-company">
+
+                        {empresa}
+
+                        <span class="asset-ticker">
+                            {ticker}
+                        </span>
+
+                    </div>
+
+                    <div class="asset-sector">
+                        {sector}
+                    </div>
+
                 </div>
 
             </div>
@@ -3421,9 +3626,9 @@ with tab_cartera:
         </div>
 
 
-        <div class="asset-right">
+        <!-- DERECHA: PRECIO -->
 
-            {badge_nuevo}
+        <div class="asset-right">
 
             <div class="current-price">
                 {precio_actual_text}
@@ -4001,6 +4206,16 @@ render_html(
     </span>
 
 </div>
+
+
+<a
+    href="#top"
+    class="scroll-top"
+    title="Volver arriba"
+    aria-label="Volver arriba"
+>
+    ↑
+</a>
 """,
     unsafe_allow_html=True,
 )
