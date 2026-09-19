@@ -213,18 +213,44 @@ def obtener_precios_activos(df):
 def formatear_numero(
     value,
     decimals=2,
-    suffix=""
+    suffix="",
+    signo=False
 ):
+    """
+    Formatea números en formato español:
+
+        1234.56  -> 1.234,56
+        1234.56  -> +1.234,56 si signo=True
+        -1234.56 -> -1.234,56
+
+    Los cálculos internos siguen utilizando float.
+    """
 
     if value is None:
         return "—"
 
     try:
 
-        return (
-            f"{value:,.{decimals}f}"
-            f"{suffix}"
+        numero = float(value)
+
+        texto = f"{numero:,.{decimals}f}"
+
+        # Conversión de formato anglosajón:
+        # 1,234.56
+        #
+        # a formato español:
+        # 1.234,56
+        texto = (
+            texto
+            .replace(",", "TEMP")
+            .replace(".", ",")
+            .replace("TEMP", ".")
         )
+
+        if signo and numero > 0:
+            texto = "+" + texto
+
+        return f"{texto}{suffix}"
 
     except Exception:
 
@@ -842,9 +868,7 @@ st.markdown(
     """
 <style>
 
-@import url(
-'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap'
-);
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
 
 
 /* =========================================================
@@ -2867,7 +2891,12 @@ render_html(
             class="summary-value"
             style="color:{color_resultado};"
         >
-            {beneficio_acumulado:+,.2f} €
+            {formatear_numero(
+                beneficio_acumulado,
+                2,
+                " €",
+                True
+            )}
         </div>
 
         <div class="summary-detail">
@@ -2887,11 +2916,20 @@ render_html(
             class="summary-value"
             style="color:{color_resultado};"
         >
-            {rentabilidad_pct:+.2f}%
+            {formatear_numero(
+                rentabilidad_pct,
+                2,
+                "%",
+                True
+            )}
         </div>
 
         <div class="summary-detail">
-            Sobre {CAPITAL_INICIAL:,.0f} €
+            Sobre {formatear_numero(
+                CAPITAL_INICIAL,
+                0,
+                " €"
+            )}
         </div>
 
     </div>
@@ -2921,7 +2959,11 @@ render_html(
         </div>
 
         <div class="summary-value">
-            {win_rate:.1f}%
+            {formatear_numero(
+                win_rate,
+                1,
+                "%"
+            )}
         </div>
 
         <div class="summary-detail">
@@ -3309,9 +3351,19 @@ with tab_cartera:
             else:
 
                 performance_text = (
-                    f"{porcentaje_posicion:+.2f}%"
+                    f"{formatear_numero(
+                        porcentaje_posicion,
+                        2,
+                        "%",
+                        True
+                    )}"
                     f" · "
-                    f"{beneficio_posicion:+,.2f} €"
+                    f"{formatear_numero(
+                        beneficio_posicion,
+                        2,
+                        " €",
+                        True
+                    )}"
                 )
 
                 performance_class = (
@@ -3326,7 +3378,11 @@ with tab_cartera:
             # ------------------------------------------------
 
             ratio_rr_text = (
-                f"{ratio_rr:.1f}x"
+                formatear_numero(
+                    ratio_rr,
+                    1,
+                    "x"
+                )
                 if ratio_rr is not None
                 else "—"
             )
@@ -3337,25 +3393,37 @@ with tab_cartera:
             # ------------------------------------------------
 
             stop_loss_text = (
-                f"{stop_loss:,.2f}"
+                formatear_numero(
+                    stop_loss,
+                    2
+                )
                 if stop_loss is not None
                 else "—"
             )
 
             entrada_text = (
-                f"{precio_entrada:,.2f}"
+                formatear_numero(
+                    precio_entrada,
+                    2
+                )
                 if precio_entrada is not None
                 else "—"
             )
 
             actual_text = (
-                f"{precio_actual:,.2f}"
+                formatear_numero(
+                    precio_actual,
+                    2
+                )
                 if precio_actual is not None
                 else "—"
             )
 
             take_profit_text = (
-                f"{take_profit:,.2f}"
+                formatear_numero(
+                    take_profit,
+                    2
+                )
                 if take_profit is not None
                 else "—"
             )
@@ -3556,7 +3624,10 @@ with tab_cartera:
             # ------------------------------------------------
 
             precio_actual_text = (
-                f"{precio_actual:,.2f}"
+                formatear_numero(
+                    precio_actual,
+                    2
+                )
                 if precio_actual is not None
                 else "—"
             )
@@ -3769,12 +3840,22 @@ with tab_resultados:
                     color:{color_resultado};
                 "
             >
-                {beneficio_acumulado:+,.2f} €
+                {formatear_numero(
+                    beneficio_acumulado,
+                    2,
+                    " €",
+                    True
+                )}
             </div>
 
             <div class="result-percent">
 
-                {rentabilidad_pct:+.2f}%
+                {formatear_numero(
+                    rentabilidad_pct,
+                    2,
+                    "%",
+                    True
+                )}
                 de retorno
 
             </div>
@@ -3796,12 +3877,22 @@ with tab_resultados:
 
         <span>
             ● Realizado:
-            {beneficio_realizado:+,.2f} €
+            {formatear_numero(
+                beneficio_realizado,
+                2,
+                " €",
+                True
+            )}
         </span>
 
         <span>
             ● Abierto:
-            {beneficio_no_realizado:+,.2f} €
+            {formatear_numero(
+                beneficio_no_realizado,
+                2,
+                " €",
+                True
+            )}
         </span>
 
     </div>
@@ -3948,7 +4039,11 @@ with tab_resultados:
             </span>
 
             <span class="metric-value">
-                {win_rate:.1f}%
+                {formatear_numero(
+                    win_rate,
+                    1,
+                    "%"
+                )}
             </span>
 
         </div>
@@ -3970,7 +4065,12 @@ with tab_resultados:
                     };
                 "
             >
-                {beneficio_realizado:+,.2f} €
+                {formatear_numero(
+                    beneficio_realizado,
+                    2,
+                    " €",
+                    True
+                )}
             </span>
 
         </div>
@@ -3992,7 +4092,12 @@ with tab_resultados:
                     };
                 "
             >
-                {beneficio_no_realizado:+,.2f} €
+                {formatear_numero(
+                    beneficio_no_realizado,
+                    2,
+                    " €",
+                    True
+                )}
             </span>
 
         </div>
@@ -4010,7 +4115,12 @@ with tab_resultados:
                     color:{color_resultado};
                 "
             >
-                {beneficio_acumulado:+,.2f} €
+                {formatear_numero(
+                    beneficio_acumulado,
+                    2,
+                    " €",
+                    True
+                )}
             </span>
 
         </div>
@@ -4023,7 +4133,11 @@ with tab_resultados:
             </span>
 
             <span class="metric-value">
-                {CAPITAL_INICIAL:,.0f} €
+                {formatear_numero(
+                    CAPITAL_INICIAL,
+                    0,
+                    " €"
+                )}
             </span>
 
         </div>
