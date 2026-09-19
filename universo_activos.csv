@@ -1,0 +1,68 @@
+Ticker,Empresa,Sector,Icono
+TLGO.MC,Talgo,Industrial,🚆
+TUB.MC,Tubacex,Industrial,⚙️
+DOM.MC,Global Dominion,Servicios / Tecnología,🔌
+EDR.MC,eDreams ODIGEO,Consumo / Turismo,✈️
+VOC.MC,Vocento,Medios de Comunicación,📰
+PVA.MC,Pescanova,Alimentación,🐟
+PRS.MC,Prisa,Medios de Comunicación,🎙️
+SLR.MC,Solaria,Energías Renovables,☀️
+CIE.MC,CIE Automotive,Automoción,🚗
+GRE.MC,Grenergy Renovables,Energías Renovables,🌱
+MTS.MC,ArcelorMittal,Materiales Básico / Acero,🏭
+CAF.MC,Construcciones y Aux. de Ferrocarriles,Industrial,🚆
+ALM.MC,Almirall,Salud / Farmacéutica,💊
+PHM.MC,PharmaMar,Salud / Biotecnología,🔬
+ANA.MC,Acciona,Infraestructuras,🏗️
+ANE.MC,Acciona Energía,Energías Renovables,⚡
+A3M.MC,Atresmedia,Medios de Comunicación,📺
+CASH.MC,Prosegur Cash,Servicios Financieros,💵
+CLR.MC,Celeo Redes,Energía,🔌
+EBRO.MC,Ebro Foods,Alimentación,🌾
+ENG.MC,Enagás,Utilities / Gas,🔥
+FDR.MC,Fluidra,Bienes de Consumo,🏊
+GEST.MC,Gestamp,Automoción,🚘
+IDR.MC,Indra Sistemas,Tecnología / Defensa,💻
+MAP.MC,Mapfre,Aseguradora,🛡️
+MEL.MC,Meliá Hotels,Consumo / Turismo,🏨
+MRL.MC,Merlin Properties,Inmobiliario / SOCIMI,🏢
+NTGY.MC,Naturgy,Utilities / Gas y Elec.,💡
+RED.MC,Redeia,Utilities / Red Eléctrica,⚡
+REN.MC,Renta 4 Banco,Banca / Servicios Fin.,🏦
+SAB.MC,Banco Sabadell,Banca,🏦
+SAN.MC,Banco Santander,Banca,🏦
+SCYR.MC,Sacyr,Infraestructuras,🏗️
+TRE.MC,Técnicas Reunidas,Ingeniería / Energía,🛠️
+UNI.MC,Unicaja Banco,Banca,🏦
+VID.MC,Vidrala,Industrial / Envases,🍾
+MCG.L,Mobico,Buses,🏗️
+ITX.MC,Inditex,Consumo C�clico / Textil,??
+BBVA.MC,BBVA,Banca,??
+SAN.MC,Banco Santander,Banca,??
+IBE.MC,Iberdrola,Utilities / Energ�as,?
+REP.MC,Repsol,Energ�a / Petr�leo,???
+TEF.MC,Telef�nica,Telecomunicaciones,??
+ACS.MC,ACS,Infraestructuras y Construcci�n,???
+AENA.MC,Aena,Aeropuertos / Servicios,??
+FER.MC,Ferrovial,Infraestructuras,???
+BKT.MC,Bankinter,Banca,??
+AAPL,Apple Inc.,Tecnolog�a / Hardware,??
+MSFT,Microsoft Corp.,Tecnolog�a / Software,??
+NVDA,NVIDIA Corp.,Semiconductores / IA,?
+AMZN,Amazon.com Inc.,Consumo Discrecional / E-commerce,??
+GOOGL,Alphabet Inc. (Google),Tecnolog�a / Servicios Internet,??
+META,Meta Platforms Inc.,Tecnolog�a / Redes Sociales,??
+TSLA,Tesla Inc.,Automoci�n / Veh�culos El�ctricos,??
+JPM,JPMorgan Chase & Co.,Servicios Financieros / Banca,???
+ASML.AS,ASML Holding NV,Tecnolog�a / Semiconductores,??
+MC.PA,LVMH Mo�t Hennessy Louis Vuitton,Consumo Discrecional / Lujo,??
+SAP.DE,SAP SE,Tecnolog�a / Software Empresarial,??
+SIE.DE,Siemens AG,Industrial / Automoci�n,??
+SAN.PA,Sanofi SA,Salud / Farmac�utica,??
+SPY,SPDR S&P 500 ETF Trust,ETF / Renta Variable EE.UU.,??
+QQQ,Invesco QQQ Trust,ETF / Tecnolog�a EE.UU.,??
+VGK,Vanguard FTSE Europe ETF,ETF / Renta Variable Europa,????
+IWM,iShares Russell 2000 ETF,ETF / Small Caps EE.UU.,??
+EEM,iShares MSCI Emerging Markets ETF,ETF / Mercados Emergentes,??
+GLD,SPDR Gold Shares,ETF / Materias Primas (Oro),??
+TLT,iShares 20+ Year Treasury Bond ETF,ETF / Renta Fija (Bonos),??
