@@ -27,7 +27,6 @@ MAESTRO_ACTIVOS_BASE = {
     "SAN.MC": ("Banco Santander", "Banca", "🏦"),
     "BBVA.MC": ("BBVA", "Banca", "🏦"),
     "ITX.MC": ("Inditex", "Consumo Cíclico", "👗"),
-    # ... puedes mantener o ampliar tu base aquí o dejar que el CSV maneje los 1000
 }
 
 def cargar_universo():
@@ -158,10 +157,15 @@ def auditar():
     try:df=pd.read_csv(ARCHIVO_HISTORIAL)
     except:return
     changed=False
+    hoy = ahora().date()
     for i,r in df.iterrows():
         if str(r.get("Estado"))!="ACTIVA":continue
         try:
-            f=pd.to_datetime(r.Fecha).date(); d=norm(yf.download(r.Ticker,start=(f+timedelta(days=1)).isoformat(),auto_adjust=True,progress=False,threads=False));
+            f=pd.to_datetime(r.Fecha).date()
+            inicio = f + timedelta(days=1)
+            if inicio > hoy:
+                continue
+            d=norm(yf.download(r.Ticker, start=inicio.isoformat(), end=hoy.isoformat(), auto_adjust=True, progress=False, threads=False))
             if d.empty:continue
             sl,tp=float(r.Stop_Loss),float(r.Take_Profit)
             for idx,v in d.iterrows():
@@ -187,17 +191,14 @@ def main():
     blocked=bloqueados()
     print(f"Bloqueados por cuarentena/activas: {len(blocked)}")
     
-    # Filtrar los que no están bloqueados
     activos_a_analizar = [t for t in activos if t not in blocked]
     out = []
 
-    # Procesamiento por lotes (Chunks) para soportar miles de tickers eficientemente
     for i in range(0, len(activos_a_analizar), TAMANO_LOTE):
         lote = activos_a_analizar[i:i + TAMANO_LOTE]
         print(f"📥 Descargando lote {i//TAMANO_LOTE + 1} ({len(lote)} activos)...")
         
         try:
-            # Descarga masiva del lote completo en paralelo con yfinance
             datos_lote = yf.download(lote, period="1y", interval="1d", auto_adjust=True, group_by="ticker", progress=False, threads=True)
             
             for t in lote:
