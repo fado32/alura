@@ -423,8 +423,8 @@ render_html(
 <div class="header-container">
     <div>
         <div class="brand-kicker">Alura Quant Intelligence</div>
-        <h1 class="main-title">Panel de Control de Activos</h1>
-        <div class="main-subtitle">Seguimiento institucional de oportunidades cuantitativas y rendimiento operativo.</div>
+        <h1 class="main-title">Tu Radar de Inversión</h1>
+        <div class="main-subtitle">Señales cuantitativas, cartera y resultados</div>
     </div>
 </div>
 """,
@@ -435,11 +435,11 @@ render_html(
     f"""
 <div class="kpi-grid">
     <div class="kpi-card">
-        <div class="kpi-title">Activos en Universo</div>
+        <div class="kpi-title">Acciones monitoreadas</div>
         <div class="kpi-val">{TOTAL_ACTIVOS_UNIVERSO}</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-title">Señales Registradas</div>
+        <div class="kpi-title">Señales</div>
         <div class="kpi-val">{total_alertas}</div>
     </div>
     <div class="kpi-card">
@@ -447,7 +447,7 @@ render_html(
         <div class="kpi-val">{exitos}</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-title">Efectividad & Beneficio</div>
+        <div class="kpi-title">Beneficio</div>
         <div class="kpi-val" style="font-size: 21px;">{win_rate:.1f}% <span style="font-size: 13px; font-weight: 700; color: {color_rentabilidad}; margin-left: 2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
     </div>
 </div>
@@ -463,7 +463,7 @@ if df_hist.empty:
 # NAVEGACIÓN PRINCIPAL (TABS)
 # ============================================================
 tab_cartera, tab_resultados, tab_historial = st.tabs(
-    ["💼  Cartera Activa", "📊  Resultados & Curva", "📜  Histórico Completo"]
+    ["💼  Cartera", "📊  Resultados", "📜  Histórico"]
 )
 
 # ============================================================
