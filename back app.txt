@@ -177,14 +177,6 @@ def obtener_precios_activos(df):
     """
     Obtiene una única vez el precio actual de cada ticker
     activo.
-
-    Devuelve:
-
-        {
-            "REP.MC": 15.42,
-            "SAN.MC": 7.91,
-            ...
-        }
     """
 
     precios = {}
@@ -394,16 +386,6 @@ def calcular_pnl_posicion(
 
     """
     Calcula el P&L no realizado de una posición.
-
-    Ejemplo:
-
-        Entrada: 10 €
-        Actual: 11 €
-        Capital: 300 €
-
-        Resultado:
-            +30 €
-            +10%
     """
 
     if (
@@ -458,9 +440,6 @@ def calcular_beneficio_realizado(df):
 
     """
     Calcula únicamente operaciones cerradas.
-
-    OBJETIVO_CUMPLIDO -> beneficio
-    STOP_SALTADO      -> pérdida
     """
 
     beneficio = 0.0
@@ -489,6 +468,8 @@ def calcular_beneficio_realizado(df):
                 "Stop_Loss"
             ),
             precio_entrada * 0.96
+            if precio_entrada is not None
+            else None
         )
 
         take_profit = safe_float(
@@ -496,6 +477,8 @@ def calcular_beneficio_realizado(df):
                 "Take_Profit"
             ),
             precio_entrada * 1.10
+            if precio_entrada is not None
+            else None
         )
 
         if (
@@ -543,12 +526,6 @@ def calcular_beneficio_no_realizado(
     """
     Calcula el beneficio/pérdida actual de todas las posiciones
     abiertas.
-
-    Devuelve:
-
-        beneficio_total
-        posiciones_ganadoras
-        posiciones_perdedoras
     """
 
     beneficio_total = 0.0
@@ -621,13 +598,13 @@ def calcular_resultados(
     """
     Calcula la curva de beneficio.
 
-    La parte histórica representa operaciones cerradas.
+    Histórico:
+        operaciones cerradas
 
-    El último punto incorpora:
-
+    Último punto:
         beneficio realizado
         +
-        beneficio no realizado actual
+        beneficio abierto actual
     """
 
     beneficio_realizado = 0.0
@@ -699,6 +676,8 @@ def calcular_resultados(
                     "Stop_Loss"
                 ),
                 precio_entrada * 0.96
+                if precio_entrada is not None
+                else None
             )
 
             take_profit = safe_float(
@@ -706,6 +685,8 @@ def calcular_resultados(
                     "Take_Profit"
                 ),
                 precio_entrada * 1.10
+                if precio_entrada is not None
+                else None
             )
 
             if (
@@ -751,19 +732,22 @@ def calcular_resultados(
         )
 
     # --------------------------------------------------------
-    # INCORPORAR P&L ACTUAL DE POSICIONES ABIERTAS
+    # P&L ACTUAL DE POSICIONES ABIERTAS
     # --------------------------------------------------------
 
-    if beneficio_no_realizado != 0:
+    beneficio_total_actual = (
+        beneficio_realizado +
+        beneficio_no_realizado
+    )
+
+    if (
+        beneficio_no_realizado != 0
+        or not fechas_curva
+    ):
 
         fecha_actual = (
             datetime.now()
             .strftime("%Y-%m-%d")
-        )
-
-        beneficio_total_actual = (
-            beneficio_realizado +
-            beneficio_no_realizado
         )
 
         if (
@@ -1063,6 +1047,22 @@ section[data-testid="stSidebar"] {
 
 .portfolio-summary {
 
+    display:
+        grid;
+
+    grid-template-columns:
+        repeat(5, 1fr);
+
+    gap:
+        12px;
+
+    margin-bottom:
+        22px;
+
+}
+
+.summary-card {
+
     background:
         var(--surface);
 
@@ -1070,32 +1070,13 @@ section[data-testid="stSidebar"] {
         1px solid var(--border);
 
     border-radius:
-        20px;
+        16px;
 
     padding:
-        24px 26px;
+        17px 18px;
 
     box-shadow:
         var(--shadow);
-
-    margin-bottom:
-        18px;
-
-    display:
-        grid;
-
-    grid-template-columns:
-        1.5fr 1fr 1fr 1fr;
-
-    gap:
-        24px;
-
-    align-items:
-        center;
-
-}
-
-.summary-main {
 
     min-width:
         0;
@@ -1105,16 +1086,22 @@ section[data-testid="stSidebar"] {
 .summary-label {
 
     color:
-        var(--text-secondary);
+        var(--text-tertiary);
 
     font-size:
-        11px;
+        9px;
+
+    text-transform:
+        uppercase;
+
+    letter-spacing:
+        .07em;
 
     font-weight:
-        600;
+        800;
 
     margin-bottom:
-        5px;
+        8px;
 
 }
 
@@ -1124,79 +1111,35 @@ section[data-testid="stSidebar"] {
         'Plus Jakarta Sans';
 
     font-size:
-        30px;
+        21px;
 
     line-height:
-        1;
+        1.05;
 
     font-weight:
         800;
 
     letter-spacing:
-        -.04em;
+        -.035em;
 
     color:
         var(--text);
 
 }
 
-.summary-performance {
-
-    display:
-        inline-flex;
-
-    align-items:
-        center;
-
-    gap:
-        5px;
+.summary-detail {
 
     margin-top:
-        8px;
-
-    font-size:
-        12px;
-
-    font-weight:
-        800;
-
-}
-
-.summary-stat-label {
+        6px;
 
     color:
-        var(--text-tertiary);
+        var(--text-secondary);
 
     font-size:
         10px;
 
-    text-transform:
-        uppercase;
-
-    letter-spacing:
-        .08em;
-
     font-weight:
-        800;
-
-    margin-bottom:
-        5px;
-
-}
-
-.summary-stat-value {
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        19px;
-
-    font-weight:
-        800;
-
-    color:
-        var(--text);
+        600;
 
 }
 
@@ -1721,77 +1664,6 @@ section[data-testid="stSidebar"] {
 
     font-weight:
         800;
-
-}
-
-
-/* =========================================================
-   P&L BADGE
-   ========================================================= */
-
-.position-pnl {
-
-    display:
-        inline-flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        flex-end;
-
-    gap:
-        4px;
-
-    margin-top:
-        6px;
-
-    font-size:
-        11px;
-
-    font-weight:
-        700;
-
-}
-
-.position-pnl strong {
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        13px;
-
-}
-
-.position-pnl.positive {
-
-    color:
-        var(--green);
-
-}
-
-.position-pnl.negative {
-
-    color:
-        var(--red);
-
-}
-
-.position-pnl.neutral {
-
-    color:
-        var(--text-secondary);
-
-}
-
-.pnl-arrow {
-
-    font-size:
-        14px;
-
-    font-weight:
-        900;
 
 }
 
@@ -2619,7 +2491,7 @@ div[data-testid="stDataFrame"] {
     .portfolio-summary {
 
         grid-template-columns:
-            1fr 1fr;
+            repeat(3, 1fr);
 
     }
 
@@ -2655,23 +2527,57 @@ div[data-testid="stDataFrame"] {
 
     }
 
+    .hero {
+
+        margin-bottom:
+            20px;
+
+    }
+
     .portfolio-summary {
 
         grid-template-columns:
-            1fr;
+            1fr 1fr;
 
         gap:
-            15px;
+            9px;
+
+        margin-bottom:
+            20px;
+
+    }
+
+    .summary-card {
 
         padding:
-            19px;
+            14px;
+
+        border-radius:
+            14px;
+
+    }
+
+    .summary-label {
+
+        font-size:
+            8px;
+
+        margin-bottom:
+            7px;
 
     }
 
     .summary-value {
 
         font-size:
-            27px;
+            18px;
+
+    }
+
+    .summary-detail {
+
+        font-size:
+            9px;
 
     }
 
@@ -2727,6 +2633,20 @@ div[data-testid="stDataFrame"] {
 
         font-size:
             18px;
+
+    }
+
+    .performance-row {
+
+        margin-bottom:
+            15px;
+
+    }
+
+    .performance-value {
+
+        font-size:
+            12px;
 
     }
 
@@ -2925,10 +2845,10 @@ render_html(
     f"""
 <div class="portfolio-summary">
 
-    <div class="summary-main">
+    <div class="summary-card">
 
         <div class="summary-label">
-            Beneficio acumulado simulado
+            Beneficio simulado
         </div>
 
         <div
@@ -2938,71 +2858,87 @@ render_html(
             {beneficio_acumulado:+,.2f} €
         </div>
 
+        <div class="summary-detail">
+            Realizado + abierto
+        </div>
+
+    </div>
+
+
+    <div class="summary-card">
+
+        <div class="summary-label">
+            Rentabilidad
+        </div>
+
         <div
-            class="summary-performance"
+            class="summary-value"
             style="color:{color_resultado};"
         >
-            {"▲" if beneficio_acumulado >= 0 else "▼"}
-
             {rentabilidad_pct:+.2f}%
-            de rentabilidad
+        </div>
 
+        <div class="summary-detail">
+            Sobre {CAPITAL_INICIAL:,.0f} € simulados
         </div>
 
     </div>
 
 
-    <div>
+    <div class="summary-card">
 
-        <div class="summary-stat-label">
-            Capital simulado
+        <div class="summary-label">
+            P&L abierto
         </div>
 
-        <div class="summary-stat-value">
-            {CAPITAL_INICIAL:,.0f} €
+        <div
+            class="summary-value"
+            style="
+                color:{
+                    '#16a34a'
+                    if beneficio_no_realizado >= 0
+                    else '#dc2626'
+                };
+            "
+        >
+            {beneficio_no_realizado:+,.2f} €
         </div>
 
-    </div>
-
-
-    <div>
-
-        <div class="summary-stat-label">
-            Posiciones activas
-        </div>
-
-        <div class="summary-stat-value">
-            {activas}
-        </div>
-
-        <div style="
-            margin-top:4px;
-            color:#16a34a;
-            font-size:10px;
-            font-weight:700;
-        ">
+        <div class="summary-detail">
             {posiciones_con_beneficio} en beneficio
         </div>
 
     </div>
 
 
-    <div>
+    <div class="summary-card">
 
-        <div class="summary-stat-label">
+        <div class="summary-label">
+            Posiciones activas
+        </div>
+
+        <div class="summary-value">
+            {activas}
+        </div>
+
+        <div class="summary-detail">
+            {posiciones_con_perdida} en pérdida
+        </div>
+
+    </div>
+
+
+    <div class="summary-card">
+
+        <div class="summary-label">
             Win Rate
         </div>
 
-        <div class="summary-stat-value">
+        <div class="summary-value">
             {win_rate:.1f}%
         </div>
 
-        <div style="
-            margin-top:4px;
-            color:#94a3b8;
-            font-size:10px;
-            font-weight:600;
-        ">
+        <div class="summary-detail">
             {exitos} TP · {fallos} SL
         </div>
 
@@ -3109,7 +3045,7 @@ render_html(
         <div class="kpi-head">
 
             <div class="kpi-title">
-                Beneficio acumulado
+                Beneficio simulado
             </div>
 
             <div
@@ -3141,7 +3077,7 @@ render_html(
         </div>
 
         <div class="kpi-description">
-            {rentabilidad_pct:+.2f}% retorno simulado
+            Realizado + posiciones abiertas
         </div>
 
     </div>
@@ -3494,7 +3430,7 @@ with tab_cartera:
 
 
             # ------------------------------------------------
-            # P&L ACTUAL DE LA POSICIÓN
+            # P&L ACTUAL
             # ------------------------------------------------
 
             (
@@ -3506,94 +3442,16 @@ with tab_cartera:
             )
 
 
-            if beneficio_posicion is None:
-
-                pnl_text = "—"
-
-                pnl_badge = """
-<div class="position-pnl neutral">
-    <span>Sin datos</span>
-</div>
-"""
-
-            elif beneficio_posicion > 0:
-
-                pnl_text = (
-                    f"+{beneficio_posicion:,.2f} €"
-                )
-
-                pnl_badge = f"""
-<div class="position-pnl positive">
-
-    <span class="pnl-arrow">
-        ↗
-    </span>
-
-    <strong>
-        +{beneficio_posicion:,.2f} €
-    </strong>
-
-    <span>
-        ({porcentaje_posicion:+.2f}%)
-    </span>
-
-</div>
-"""
-
-            elif beneficio_posicion < 0:
-
-                pnl_text = (
-                    f"{beneficio_posicion:,.2f} €"
-                )
-
-                pnl_badge = f"""
-<div class="position-pnl negative">
-
-    <span class="pnl-arrow">
-        ↘
-    </span>
-
-    <strong>
-        {beneficio_posicion:,.2f} €
-    </strong>
-
-    <span>
-        ({porcentaje_posicion:+.2f}%)
-    </span>
-
-</div>
-"""
-
-            else:
-
-                pnl_text = "0,00 €"
-
-                pnl_badge = """
-<div class="position-pnl neutral">
-
-    <strong>
-        0,00 €
-    </strong>
-
-    <span>
-        (0,00%)
-    </span>
-
-</div>
-"""
-
-
             # ------------------------------------------------
             # PERFORMANCE
+            #
+            # ÚNICO LUGAR DONDE MOSTRAMOS EL RENDIMIENTO
             # ------------------------------------------------
 
-            performance = calcular_performance(
-                precio_actual,
-                precio_entrada
-            )
-
-
-            if performance is None:
+            if (
+                beneficio_posicion is None
+                or porcentaje_posicion is None
+            ):
 
                 performance_text = "—"
 
@@ -3604,12 +3462,14 @@ with tab_cartera:
             else:
 
                 performance_text = (
-                    f"{performance:+.2f}%"
+                    f"{porcentaje_posicion:+.2f}%"
+                    f" · "
+                    f"{beneficio_posicion:+,.2f} €"
                 )
 
                 performance_class = (
                     "performance-positive"
-                    if performance >= 0
+                    if beneficio_posicion >= 0
                     else "performance-negative"
                 )
 
@@ -3910,8 +3770,6 @@ with tab_cartera:
                 Precio actual
             </div>
 
-            {pnl_badge}
-
         </div>
 
     </div>
@@ -3924,15 +3782,7 @@ with tab_cartera:
         </div>
 
         <div class="performance-value {performance_class}">
-
             {performance_text}
-
-            {
-                f" · {pnl_text}"
-                if beneficio_posicion is not None
-                else ""
-            }
-
         </div>
 
     </div>
@@ -4128,6 +3978,7 @@ with tab_resultados:
         color:#94a3b8;
         font-weight:600;
         margin-bottom:3px;
+        flex-wrap:wrap;
     ">
 
         <span>
@@ -4299,7 +4150,11 @@ with tab_resultados:
             <span
                 class="metric-value"
                 style="
-                    color:{color_resultado};
+                    color:{
+                        '#16a34a'
+                        if beneficio_realizado >= 0
+                        else '#dc2626'
+                    };
                 "
             >
                 {beneficio_realizado:+,.2f} €
