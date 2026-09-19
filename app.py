@@ -65,12 +65,14 @@ def safe_float(value, default=None):
     Conversión segura a float.
     """
     try:
+
         if value is None or pd.isna(value):
             return default
 
         return float(value)
 
     except Exception:
+
         return default
 
 
@@ -1494,6 +1496,9 @@ section[data-testid="stSidebar"] {
     justify-content:
         space-between;
 
+    gap:
+        20px;
+
     padding:
         10px 12px;
 
@@ -1505,6 +1510,19 @@ section[data-testid="stSidebar"] {
 
     margin-bottom:
         17px;
+
+}
+
+.performance-left {
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    min-width:
+        0;
 
 }
 
@@ -1552,6 +1570,60 @@ section[data-testid="stSidebar"] {
 
     color:
         var(--text-secondary);
+
+}
+
+.performance-rr {
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    align-items:
+        flex-end;
+
+    flex-shrink:
+        0;
+
+}
+
+.performance-rr-label {
+
+    font-size:
+        8px;
+
+    color:
+        var(--text-tertiary);
+
+    text-transform:
+        uppercase;
+
+    letter-spacing:
+        .07em;
+
+    font-weight:
+        800;
+
+}
+
+.performance-rr-value {
+
+    margin-top:
+        2px;
+
+    font-family:
+        'Plus Jakarta Sans';
+
+    font-size:
+        13px;
+
+    font-weight:
+        800;
+
+    color:
+        var(--blue);
 
 }
 
@@ -1727,126 +1799,6 @@ section[data-testid="stSidebar"] {
 
     border-color:
         var(--green);
-
-}
-
-.position-values {
-
-    display:
-        grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap:
-        8px;
-
-    margin-top:
-        10px;
-
-}
-
-.position-value {
-
-    font-size:
-        10px;
-
-    color:
-        var(--text-secondary);
-
-}
-
-.position-value strong {
-
-    display:
-        block;
-
-    color:
-        var(--text);
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        11px;
-
-    margin-top:
-        2px;
-
-}
-
-
-/* =========================================================
-   PARAMETER GRID
-   ========================================================= */
-
-.params-grid {
-
-    display:
-        grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap:
-        9px;
-
-    margin-bottom:
-        17px;
-
-}
-
-.param {
-
-    background:
-        var(--surface-soft);
-
-    border:
-        1px solid var(--border-soft);
-
-    border-radius:
-        12px;
-
-    padding:
-        11px 12px;
-
-}
-
-.param-label {
-
-    color:
-        var(--text-tertiary);
-
-    font-size:
-        8px;
-
-    text-transform:
-        uppercase;
-
-    letter-spacing:
-        .07em;
-
-    font-weight:
-        800;
-
-}
-
-.param-value {
-
-    margin-top:
-        4px;
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        13px;
-
-    font-weight:
-        800;
-
-    color:
-        var(--text);
 
 }
 
@@ -2421,6 +2373,9 @@ div[data-testid="stDataFrame"] {
         margin-bottom:
             15px;
 
+        gap:
+            10px;
+
     }
 
     .performance-value {
@@ -2430,17 +2385,10 @@ div[data-testid="stDataFrame"] {
 
     }
 
-    .params-grid {
+    .performance-rr-value {
 
-        grid-template-columns:
-            1fr 1fr;
-
-    }
-
-    .position-values {
-
-        grid-template-columns:
-            1fr 1fr;
+        font-size:
+            12px;
 
     }
 
@@ -2563,8 +2511,16 @@ beneficio_acumulado = (
 )
 
 # Capital inicial escalable basado en el número total de operaciones históricas o al menos 3600€
-total_operaciones_historicas = max(1, len(df_hist))
-CAPITAL_INICIAL = max(3600.0, total_operaciones_historicas * CAPITAL_POR_ALERTA)
+total_operaciones_historicas = max(
+    1,
+    len(df_hist)
+)
+
+CAPITAL_INICIAL = max(
+    3600.0,
+    total_operaciones_historicas *
+    CAPITAL_POR_ALERTA
+)
 
 rentabilidad_pct = (
     beneficio_acumulado
@@ -2666,7 +2622,7 @@ render_html(
         </div>
 
         <div class="summary-detail">
-            Sobre {CAPITAL_INICIAL:,.0f} € 
+            Sobre {CAPITAL_INICIAL:,.0f} €
         </div>
 
     </div>
@@ -3101,6 +3057,17 @@ with tab_cartera:
 
 
             # ------------------------------------------------
+            # RISK / REWARD
+            # ------------------------------------------------
+
+            ratio_rr_text = (
+                f"{ratio_rr:.1f}x"
+                if ratio_rr is not None
+                else "—"
+            )
+
+
+            # ------------------------------------------------
             # POSITION TRACKER
             # ------------------------------------------------
 
@@ -3247,66 +3214,6 @@ with tab_cartera:
 
     </div>
 
-
-    <div class="position-values">
-
-        <div class="position-value">
-
-            Stop Loss
-
-            <strong>
-                {formatear_numero(
-                    stop_loss,
-                    2
-                )}
-            </strong>
-
-        </div>
-
-
-        <div class="position-value">
-
-            Entrada
-
-            <strong>
-                {formatear_numero(
-                    precio_entrada,
-                    2
-                )}
-            </strong>
-
-        </div>
-
-
-        <div class="position-value">
-
-            Actual
-
-            <strong>
-                {formatear_numero(
-                    precio_actual,
-                    2
-                )}
-            </strong>
-
-        </div>
-
-
-        <div class="position-value">
-
-            Take Profit
-
-            <strong>
-                {formatear_numero(
-                    take_profit,
-                    2
-                )}
-            </strong>
-
-        </div>
-
-    </div>
-
 </div>
 """
 
@@ -3316,15 +3223,8 @@ with tab_cartera:
 
 
             # ------------------------------------------------
-            # PARAMS
+            # PRECIO ACTUAL
             # ------------------------------------------------
-
-            ratio_rr_text = (
-                f"{ratio_rr:.1f}x"
-                if ratio_rr is not None
-                else "—"
-            )
-
 
             precio_actual_text = (
                 f"{precio_actual:,.2f}"
@@ -3401,100 +3301,41 @@ with tab_cartera:
     </div>
 
 
+    <!-- ================================================
+         RENDIMIENTO + RISK / REWARD
+         ================================================ -->
+
     <div class="performance-row">
 
-        <div class="performance-label">
-            Rendimiento desde entrada
-        </div>
+        <div class="performance-left">
 
-        <div class="performance-value {performance_class}">
-            {performance_text}
-        </div>
-
-    </div>
-
-
-    {position_tracker}
-
-
-    <div class="params-grid">
-
-        <div class="param">
-
-            <div class="param-label">
-                Precio entrada
+            <div class="performance-label">
+                Rendimiento desde entrada
             </div>
 
-            <div class="param-value">
-                {formatear_numero(
-                    precio_entrada,
-                    2
-                )}
+            <div class="performance-value {performance_class}">
+                {performance_text}
             </div>
 
         </div>
 
 
-        <div class="param">
+        <div class="performance-rr">
 
-            <div class="param-label">
-                Stop Loss
-            </div>
-
-            <div
-                class="param-value"
-                style="
-                    color:#dc2626;
-                "
-            >
-                {formatear_numero(
-                    stop_loss,
-                    2
-                )}
-            </div>
-
-        </div>
-
-
-        <div class="param">
-
-            <div class="param-label">
-                Take Profit
-            </div>
-
-            <div
-                class="param-value"
-                style="
-                    color:#16a34a;
-                "
-            >
-                {formatear_numero(
-                    take_profit,
-                    2
-                )}
-            </div>
-
-        </div>
-
-
-        <div class="param">
-
-            <div class="param-label">
+            <div class="performance-rr-label">
                 Risk / Reward
             </div>
 
-            <div
-                class="param-value"
-                style="
-                    color:#2563eb;
-                "
-            >
+            <div class="performance-rr-value">
                 {ratio_rr_text}
             </div>
 
         </div>
 
     </div>
+
+
+    {position_tracker}
 
 
     <div class="ai-box">
