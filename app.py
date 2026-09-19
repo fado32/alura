@@ -5,7 +5,7 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# ALURA QUANT — LIGHT FINTECH UI (V5.2 MOBILE RESPONSIVE)
+# ALURA QUANT — LIGHT FINTECH UI (V5.3 MOBILE CLEAN)
 # ============================================================
 st.set_page_config(
     page_title="Alura Quant",
@@ -71,7 +71,7 @@ def formatear_tesis_ia(texto):
     return texto_html.strip()
 
 # ============================================================
-# DESIGN SYSTEM — PREMIUM FINTECH STYLING (MOBILE OPTIMIZED)
+# DESIGN SYSTEM — PREMIUM FINTECH STYLING (BADGE REPOSITIONED)
 # ============================================================
 st.markdown(
     """
@@ -161,7 +161,7 @@ html, body, [class*="css"] {
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    min-height: 90px; /* Asegura altura uniforme para alinear valores */
+    min-height: 90px;
 }
 .kpi-card:hover {
     transform: translateY(-2px);
@@ -203,7 +203,7 @@ html, body, [class*="css"] {
 .asset-top {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start; /* Cambiado a flex-start para evitar solapamientos verticales en móvil */
+    align-items: flex-start;
     gap: 12px;
     margin-bottom: 16px;
     padding-bottom: 16px;
@@ -214,7 +214,7 @@ html, body, [class*="css"] {
     align-items: flex-start;
     gap: 14px;
     flex: 1;
-    min-width: 0; /* Permite que el texto haga wrap correctamente sin romper contenedores */
+    min-width: 0;
 }
 .asset-icon-box {
     width: 44px;
@@ -237,7 +237,6 @@ html, body, [class*="css"] {
     font-weight: 800;
     color: var(--text-main);
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
 }
@@ -252,7 +251,7 @@ html, body, [class*="css"] {
     margin-top: 2px;
 }
 
-/* BADGE DE NUEVO */
+/* BADGE DE NUEVO REUBICADO (ARRIBA A LA DERECHA) */
 .badge-new {
     background: #dcfce7;
     color: #15803d;
@@ -267,11 +266,15 @@ html, body, [class*="css"] {
     letter-spacing: 0.05em;
     text-transform: uppercase;
     white-space: nowrap;
+    margin-bottom: 4px;
 }
 
 .price-display {
     text-align: right;
     min-width: 90px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
 }
 .price-val-big {
     font-family: 'Plus Jakarta Sans', sans-serif;
@@ -374,7 +377,7 @@ html, body, [class*="css"] {
     font-weight: 500;
 }
 
-/* MEDIA QUERIES PARA MÓVILES (RESPONSIVE MEJORADO) */
+/* MEDIA QUERIES PARA MÓVILES */
 @media (max-width: 900px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
     .params-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -495,7 +498,7 @@ tab_cartera, tab_resultados, tab_historial = st.tabs(
 )
 
 # ============================================================
-# 1. PESTAÑA CARTERA (CON FILTROS Y ETIQUETAS DE NUEVO)
+# 1. PESTAÑA CARTERA
 # ============================================================
 with tab_cartera:
     df_activas = df_hist[
@@ -505,7 +508,6 @@ with tab_cartera:
     if df_activas.empty:
         st.info("No hay posiciones activas en la cartera en este momento.")
     else:
-        # Barra de filtros y búsqueda superior para cartera
         col_filtro_1, col_filtro_2 = st.columns([2, 2])
         with col_filtro_1:
             sectores_disponibles = ["Todos los sectores"] + sorted(df_activas["Sector"].dropna().unique().tolist()) if "Sector" in df_activas.columns else ["Todos los sectores"]
@@ -513,7 +515,6 @@ with tab_cartera:
         with col_filtro_2:
             busqueda_cartera = st.text_input("Buscar en cartera", placeholder="🔍 Filtrar por nombre o ticker...", label_visibility="collapsed")
 
-        # Aplicar filtros
         df_filtrada = df_activas.copy()
         if filtro_sector != "Todos los sectores":
             df_filtrada = df_filtrada[df_filtrada["Sector"] == filtro_sector]
@@ -529,7 +530,6 @@ with tab_cartera:
             ticker = row.get("Ticker", "")
             sector = row.get("Sector", "Mercado Continuo")
             
-            # Comprobar si la alerta es reciente (menos de 48 horas) para mostrar el icono de "NUEVO"
             es_nuevo = False
             if "Fecha" in row and pd.notna(row["Fecha"]):
                 try:
@@ -539,6 +539,7 @@ with tab_cartera:
                 except Exception:
                     pass
 
+            # Badge reubicado a la zona superior derecha junto al precio actual
             badge_nuevo_html = '<span class="badge-new">✨ NUEVO</span>' if es_nuevo else ''
 
             precio_actual_val = obtener_precio_actual(ticker)
@@ -558,11 +559,12 @@ with tab_cartera:
                     <div class="asset-info">
                         <div class="asset-icon-box">{icono}</div>
                         <div class="asset-details-wrapper">
-                            <div class="asset-name">{empresa} <span class="asset-ticker-tag">({ticker})</span> {badge_nuevo_html}</div>
+                            <div class="asset-name">{empresa} <span class="asset-ticker-tag">({ticker})</span></div>
                             <div class="asset-sector">{sector}</div>
                         </div>
                     </div>
                     <div class="price-display">
+                        {badge_nuevo_html}
                         <div class="price-val-big">{precio_actual_str}</div>
                         <div class="price-lbl-small">Precio Actual</div>
                     </div>
