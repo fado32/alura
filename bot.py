@@ -143,10 +143,30 @@ def procesar_dataframe_activo(t, d):
 
 def comentario(c):
     try:
-        q=f"{c['empresa']} ({c['ticker']}): precio {c['precio']}€, SL {c['stop']}€, TP {c['tp']}€, score {c['score']}/100, RVOL {c['rvol']}x, RSI {c['rsi']}, ROC20 {c['roc20']}%. Razones: {c['razones']}. Redacta 2 frases técnicas en español. No modifiques niveles y no prometas rentabilidad."
-        r=client.chat.completions.create(model=MODELO_LOCAL,messages=[{"role":"system","content":"La IA solo explica una señal cuantitativa; no modifica la señal."},{"role":"user","content":q}],temperature=.4); return r.choices[0].message.content.strip()
-    except:return f"Señal cuantitativa score {c['score']}/100, RVOL {c['rvol']}x y R/R 1:{RR_TARGET}. No garantiza rentabilidad."
-
+        system_prompt = (
+            "Eres un analista cuantitativo senior de una mesa de operaciones. "
+            "Escribe un breve comentario de mercado directo, fluido y natural (máximo 2 o 3 frases), "
+            "como si le explicaras la oportunidad a un colega inversor. "
+            "PROHIBIDO usar títulos robóticos como 'Análisis técnico de...', "
+            "PROHIBIDO incluir listas de indicadores, viñetas o asteriscos de estructuración. "
+            "Habla de forma fluida integrando el volumen, la tendencia y el momento de mercado."
+        )
+        user_prompt = (
+            f"Activo: {c['empresa']} ({c['ticker']}). Precio actual: {c['precio']}€. "
+            f"Score cuantitativo: {c['score']}/100. RVOL: {c['rvol']}x. RSI: {c['rsi']}. "
+            f"Señales detectadas: {c['razones']}."
+        )
+        r = client.chat.completions.create(
+            model=MODELO_LOCAL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7  # Un poco más de temperatura para que suene más natural y humano
+        )
+        return r.choices[0].message.content.strip()
+    except Exception:
+        return f"Estructura técnica sólida con un score de {c['score']} y un volumen relativo de {c['rvol']}x, respaldada por momento alcista en tendencia."
 def guardar(c,txt):
     fields=["Fecha","Ticker","Empresa","Sector","Icono","Modo","Precio_Alerta","Stop_Loss","Take_Profit","Ratio_RR","Riesgo_Euros","Acciones","Nominal","Score","RVOL","RSI","ROC20","ATR","Regimen","Razones","Analisis_IA","Estado","Fecha_Salida","Resultado_R","MAE_R","MFE_R"]; new=not os.path.exists(ARCHIVO_HISTORIAL)
     with open(ARCHIVO_HISTORIAL,"a",newline="",encoding="utf-8") as f:
