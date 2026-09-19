@@ -5,7 +5,7 @@ import streamlit as st
 import yfinance as yf
 
 # ============================================================
-# ALURA QUANT — LIGHT FINTECH UI (V5.1 PROFESIONAL)
+# ALURA QUANT — LIGHT FINTECH UI (V5.2 MOBILE RESPONSIVE)
 # ============================================================
 st.set_page_config(
     page_title="Alura Quant",
@@ -71,7 +71,7 @@ def formatear_tesis_ia(texto):
     return texto_html.strip()
 
 # ============================================================
-# DESIGN SYSTEM — PREMIUM FINTECH STYLING (ACTUALIZADO)
+# DESIGN SYSTEM — PREMIUM FINTECH STYLING (MOBILE OPTIMIZED)
 # ============================================================
 st.markdown(
     """
@@ -144,7 +144,7 @@ html, body, [class*="css"] {
     margin-top: 2px;
 }
 
-/* KPI CARDS (MÁS COMPACTAS Y CON VALORES AMPLIADOS) */
+/* KPI CARDS */
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -155,12 +155,13 @@ html, body, [class*="css"] {
     background: var(--card-bg);
     border: 1px solid var(--border-subtle);
     border-radius: 16px;
-    padding: 16px 20px; /* Altura más compacta */
+    padding: 16px 20px;
     box-shadow: var(--shadow-card);
     transition: all 0.2s ease;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: space-between;
+    min-height: 90px; /* Asegura altura uniforme para alinear valores */
 }
 .kpi-card:hover {
     transform: translateY(-2px);
@@ -174,10 +175,11 @@ html, body, [class*="css"] {
     letter-spacing: 0.08em;
     color: var(--text-muted);
     margin-bottom: 4px;
+    line-height: 1.3;
 }
 .kpi-val {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 30px; /* Letra de valores más grande y rotunda */
+    font-size: 30px;
     font-weight: 800;
     color: var(--text-main);
     letter-spacing: -0.03em;
@@ -201,36 +203,48 @@ html, body, [class*="css"] {
 .asset-top {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start; /* Cambiado a flex-start para evitar solapamientos verticales en móvil */
+    gap: 12px;
     margin-bottom: 16px;
     padding-bottom: 16px;
     border-bottom: 1px solid #f1f5f9;
 }
 .asset-info {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 14px;
+    flex: 1;
+    min-width: 0; /* Permite que el texto haga wrap correctamente sin romper contenedores */
 }
 .asset-icon-box {
-    width: 48px;
-    height: 48px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
     border-radius: 14px;
     background: var(--brand-blue-light);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 22px;
+    font-size: 20px;
+}
+.asset-details-wrapper {
+    flex: 1;
+    min-width: 0;
 }
 .asset-name {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 17px;
+    font-size: 16px;
     font-weight: 800;
     color: var(--text-main);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
 }
 .asset-ticker-tag {
     color: var(--text-muted);
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13px;
 }
 .asset-sector {
     font-size: 12px;
@@ -243,27 +257,28 @@ html, body, [class*="css"] {
     background: #dcfce7;
     color: #15803d;
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 800;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border-radius: 20px;
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 3px;
     letter-spacing: 0.05em;
     text-transform: uppercase;
-    margin-left: 8px;
-    vertical-align: middle;
+    white-space: nowrap;
 }
 
 .price-display {
     text-align: right;
+    min-width: 90px;
 }
 .price-val-big {
     font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 20px;
+    font-size: 19px;
     font-weight: 800;
     color: var(--brand-blue);
+    white-space: nowrap;
 }
 .price-lbl-small {
     font-size: 10px;
@@ -271,6 +286,7 @@ html, body, [class*="css"] {
     color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: nowrap;
 }
 
 /* PARAMS GRID */
@@ -312,7 +328,7 @@ html, body, [class*="css"] {
     color: #334155;
 }
 
-/* ESTILOS DE TABS PERSONALIZADOS (ESTÉTICA MODULAR) */
+/* ESTILOS DE TABS PERSONALIZADOS */
 .stTabs [data-baseweb="tab-list"] {
     gap: 6px !important;
     background: #e2e8f0 !important;
@@ -358,9 +374,18 @@ html, body, [class*="css"] {
     font-weight: 500;
 }
 
+/* MEDIA QUERIES PARA MÓVILES (RESPONSIVE MEJORADO) */
 @media (max-width: 900px) {
-    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
-    .params-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .params-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .block-container { padding-top: 1rem; padding-left: 1rem; padding-right: 1rem; }
+}
+
+@media (max-width: 480px) {
+    .kpi-val { font-size: 24px !important; }
+    .asset-card { padding: 16px; }
+    .price-val-big { font-size: 16px; }
+    .asset-name { font-size: 15px; }
 }
 </style>
 """,
@@ -451,7 +476,7 @@ render_html(
     </div>
     <div class="kpi-card">
         <div class="kpi-title">Beneficio</div>
-        <div class="kpi-val" style="font-size: 23px;">{win_rate:.1f}% <span style="font-size: 13px; font-weight: 700; color: {color_rentabilidad}; margin-left: 2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
+        <div class="kpi-val" style="font-size: 21px;">{win_rate:.1f}% <span style="font-size: 12px; font-weight: 700; color: {color_rentabilidad}; display:inline-block; margin-top:2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
     </div>
 </div>
 """,
@@ -532,7 +557,7 @@ with tab_cartera:
                 <div class="asset-top">
                     <div class="asset-info">
                         <div class="asset-icon-box">{icono}</div>
-                        <div>
+                        <div class="asset-details-wrapper">
                             <div class="asset-name">{empresa} <span class="asset-ticker-tag">({ticker})</span> {badge_nuevo_html}</div>
                             <div class="asset-sector">{sector}</div>
                         </div>
