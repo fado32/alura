@@ -3500,7 +3500,7 @@ with tab_cartera:
     <div class="ai-box">
 
         <div class="ai-header">
-            ✦ Tesis del analista cuantitativo
+            ✦ Tesis del analista
         </div>
 
         <div class="ai-text">
