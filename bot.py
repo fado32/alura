@@ -98,8 +98,19 @@ def obtener_tickers_bloqueados():
 
 
 # ==========================================
-# CÁLCULO MATEMÁTICO PURO (PYTHON)
+# CÁLCULO MATEMÁTICO (ATR Y NIVELES)
 # ==========================================
+def calcular_atr(data, window=14):
+    """Calcula el Average True Range (ATR) para la gestión dinámica de volatilidad."""
+    high_low = data["High"] - data["Low"]
+    high_close = (data["High"] - data["Close"].shift()).abs()
+    low_close = (data["Low"] - data["Close"].shift()).abs()
+    
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = tr.rolling(window=window).mean()
+    return atr
+
+
 def calcular_soportes_resistencias(data):
     """Calcula matemáticamente soportes y resistencias usando mínimos y máximos locales."""
     ultimos_60 = data.tail(60)
@@ -120,7 +131,7 @@ def analizar_activo(ticker_symbol):
     ticker_obj = yf.Ticker(ticker_symbol)
     data = ticker_obj.history(period="6mo", auto_adjust=True)
 
-    if data.empty:
+    if data.empty or len(data) < 50:
         return None
 
     if isinstance(data.columns, pd.MultiIndex):
@@ -128,6 +139,8 @@ def analizar_activo(ticker_symbol):
 
     if "Close" not in data.columns or "Volume" not in data.columns:
         return None
+
+    data = data.dropna(subset=["Close", "Volume"])
 
     info = ticker_obj.info
     per = info.get("trailingPE", None)
@@ -146,12 +159,17 @@ def analizar_activo(ticker_symbol):
     data["RSI"] = 100 - (100 / (1 + rs))
 
     data["Vol_Mean_20"] = data["Volume"].rolling(window=20).mean()
+    data["ATR"] = calcular_atr(data, window=14)
 
     ultimo_precio = float(data["Close"].iloc[-1])
     ultima_ema = float(data["EMA_50"].iloc[-1])
     ultimo_rsi = float(data["RSI"].iloc[-1])
     volumen_hoy = float(data["Volume"].iloc[-1])
     volumen_medio = float(data["Vol_Mean_20"].iloc[-1])
+    ultimo_atr = float(data["ATR"].iloc[-1])
+
+    if pd.isna(ultimo_atr) or ultimo_atr == 0:
+        return None
 
     ratio_volumen = volumen_hoy / volumen_medio if volumen_medio > 0 else 1.0
     distancia_ema = ((ultimo_precio - ultima_ema) / ultima_ema) * 100
@@ -171,13 +189,19 @@ def analizar_activo(ticker_symbol):
 
     if volumen_ok and tendencia_alcista and rsi_valido:
         precio_entrada = round(ultimo_precio, 2)
-        stop_loss = round(soporte_reciente * 0.98, 2)
-        take_profit = round(precio_entrada * 1.10, 2)
-
-        # Cálculo explícito del Ratio Riesgo / Beneficio (R/R)
+        
+        # --- GESTIÓN DE RIESGO DINÁMICA (ATR) ---
+        stop_loss_atr = round(precio_entrada - (1.5 * ultimo_atr), 2)
+        stop_loss = min(stop_loss_atr, round(soporte_reciente * 0.99, 2))
+        
         riesgo = precio_entrada - stop_loss
+        if riesgo <= 0:
+            return None
+            
+        # Take profit dinámico orientado a un R/R estricto de 1:2.5
+        take_profit = round(precio_entrada + (2.5 * riesgo), 2)
         beneficio = take_profit - precio_entrada
-        ratio_rr = round(beneficio / riesgo, 2) if riesgo > 0 else 1.0
+        ratio_rr = round(beneficio / riesgo, 2)
 
         # Obtener metadatos del maestro
         nombre, sector, icono = MAESTRO_ACTIVOS.get(
@@ -220,12 +244,12 @@ def generar_comentario_ia_variado(candidato):
             "Destaca el pico de volumen relativo frente a la media y cómo la presión compradora valida la entrada.",
         ),
         (
-            "Análisis centrado en la Estructura de Soporte y Riesgo",
-            "Concéntrate en la cercanía al soporte técnico, el nivel de Stop Loss y la protección del capital.",
+            "Análisis centrado en la Estructura de Soporte y Riesgo ATR",
+            "Concéntrate en la distancia al soporte técnico, el nivel de Stop Loss por volatilidad y la protección del capital.",
         ),
         (
             "Análisis de Relación Riesgo/Beneficio (R/R)",
-            "Enfócate en la asimetría favorable de la operación (Ratio R/R) y el objetivo de Take Profit.",
+            "Enfócate en la asimetría favorable de la operación (Ratio R/R 1:2.5) y el objetivo de Take Profit.",
         ),
         (
             "Análisis Táctico de Ruptura y Tendencia",
@@ -312,14 +336,13 @@ def guardar_en_csv(candidato, comentario_ia):
 
 
 # ==========================================
-# AUDITORÍA Y ESTADÍSTICAS
+# AUDITORÍA SECUENCIAL (CRONOLÓGICA / ANTI-LOOK-AHEAD)
 # ==========================================
 def auditar_y_mostrar_estadisticas():
     if not os.path.exists(ARCHIVO_HISTORIAL):
         print("ℹ️ No hay historial de alertas previo todavía.\n")
         return
 
-    filas_actualizadas = []
     with open(ARCHIVO_HISTORIAL, mode="r", encoding="utf-8") as f:
         reader = list(csv.reader(f))
         if len(reader) <= 1:
@@ -327,13 +350,15 @@ def auditar_y_mostrar_estadisticas():
         cabecera = reader[0]
         filas = reader[1:]
 
+    filas_actualizadas = []
     cambios_realizados = False
+
     for fila in filas:
         if len(fila) < 8:
             filas_actualizadas.append(fila)
             continue
 
-        fecha_alerta = fila[0]
+        fecha_alerta_str = fila[0].split()[0]
         ticker = fila[1]
         estado = fila[-1]
 
@@ -356,21 +381,35 @@ def auditar_y_mostrar_estadisticas():
         if "ACTIVA" in estado:
             data = yf.download(
                 ticker,
-                start=fecha_alerta.split()[0],
+                start=fecha_alerta_str,
                 progress=False,
                 auto_adjust=True,
             )
-            if not data.empty and len(data) > 1:
+            if not data.empty and len(data) > 0:
                 if isinstance(data.columns, pd.MultiIndex):
                     data.columns = data.columns.get_level_values(0)
-                max_posterior = float(data["High"].max())
-                min_posterior = float(data["Low"].min())
 
-                if max_posterior >= tp_val:
-                    fila[-1] = "OBJETIVO_CUMPLIDO 🟢"
-                    cambios_realizados = True
-                elif min_posterior <= stop_val:
-                    fila[-1] = "STOP_SALTADO 🔴"
+                # Simulación cronológica vela a vela
+                estado_calculado = "ACTIVA"
+                for _, vela in data.iterrows():
+                    low_v = float(vela["Low"])
+                    high_v = float(vela["High"])
+
+                    toco_sl = low_v <= stop_val
+                    toco_tp = high_v >= tp_val
+
+                    if toco_sl and toco_tp:
+                        estado_calculado = "STOP_SALTADO 🔴"
+                        break
+                    elif toco_sl:
+                        estado_calculado = "STOP_SALTADO 🔴"
+                        break
+                    elif toco_tp:
+                        estado_calculado = "OBJETIVO_CUMPLIDO 🟢"
+                        break
+
+                if estado_calculado != "ACTIVA":
+                    fila[-1] = estado_calculado
                     cambios_realizados = True
 
         filas_actualizadas.append(fila)
@@ -411,18 +450,14 @@ def auditar_y_mostrar_estadisticas():
 # ==========================================
 def subir_a_github():
     try:
-        # 1. Añadimos todos los archivos modificados en la carpeta (app.py, bot.py, CSV, etc.)
         subprocess.run(["git", "add", "."], check=True)
-
-        # 2. Comprobamos si existen cambios pendientes de commit
         status = subprocess.run(
             ["git", "status", "--porcelain"], capture_output=True, text=True
         )
 
         if status.stdout.strip():
-            # Hay cambios pendientes: realizamos commit y push
             subprocess.run(
-                ["git", "commit", "-m", "Auto-update alertas y codigo desde local"],
+                ["git", "commit", "-m", "Auto-update alertas dinámicas ATR y auditoría secuencial"],
                 check=True,
             )
             subprocess.run(["git", "push", "origin", "main"], check=True)
@@ -440,7 +475,7 @@ def subir_a_github():
 if __name__ == "__main__":
     print("=" * 50)
     print(
-        f" ESCANEANDO UNIVERSO CON METADATOS Y NIVELES EXACTOS ({len(activos)} VALORES)"
+        f" ESCANEANDO UNIVERSO IBEX/CONTINUO CON ATR ({len(activos)} VALORES)"
     )
     print("=" * 50 + "\n")
 
@@ -497,5 +532,4 @@ if __name__ == "__main__":
             "💤 Ningún valor nuevo disponible (o todos los candidatos están en seguimiento)."
         )
 
-    # SUBIDA AUTOMÁTICA TRAS AUDITAR Y GUARDAR
     subir_a_github()
