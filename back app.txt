@@ -26,7 +26,7 @@ st.set_page_config(
 ARCHIVO_HISTORIAL = "historial_alertas.csv"
 ARCHIVO_UNIVERSO = "universo_activos.csv"
 
-CAPITAL_INICIAL = 3000.0
+CAPITAL_INICIAL = 3600
 CAPITAL_POR_ALERTA = 300.0
 
 
@@ -223,25 +223,6 @@ def formatear_numero(
         return (
             f"{value:,.{decimals}f}"
             f"{suffix}"
-        )
-
-    except Exception:
-
-        return "—"
-
-
-def formatear_euros(
-    value,
-    decimals=2
-):
-
-    if value is None:
-        return "—"
-
-    try:
-
-        return (
-            f"{value:+,.{decimals}f} €"
         )
 
     except Exception:
@@ -780,30 +761,6 @@ def calcular_resultados(
 # POSITION METRICS
 # ============================================================
 
-def calcular_performance(
-    precio_actual,
-    precio_entrada
-):
-
-    if (
-        precio_actual is None
-        or precio_entrada is None
-        or precio_entrada == 0
-    ):
-        return None
-
-    return (
-        (
-            precio_actual -
-            precio_entrada
-        )
-        /
-        precio_entrada
-        *
-        100
-    )
-
-
 def calcular_position_percentages(
     stop_loss,
     entrada,
@@ -1051,13 +1008,13 @@ section[data-testid="stSidebar"] {
         grid;
 
     grid-template-columns:
-        repeat(5, 1fr);
+        repeat(4, 1fr);
 
     gap:
         12px;
 
     margin-bottom:
-        22px;
+        32px;
 
 }
 
@@ -1080,6 +1037,19 @@ section[data-testid="stSidebar"] {
 
     min-width:
         0;
+
+    transition:
+        .2s ease;
+
+}
+
+.summary-card:hover {
+
+    transform:
+        translateY(-2px);
+
+    box-shadow:
+        var(--shadow-hover);
 
 }
 
@@ -1140,157 +1110,6 @@ section[data-testid="stSidebar"] {
 
     font-weight:
         600;
-
-}
-
-
-/* =========================================================
-   KPI GRID
-   ========================================================= */
-
-.kpi-grid {
-
-    display:
-        grid;
-
-    grid-template-columns:
-        repeat(4, 1fr);
-
-    gap:
-        14px;
-
-    margin-bottom:
-        32px;
-
-}
-
-.kpi-card {
-
-    background:
-        var(--surface);
-
-    border:
-        1px solid var(--border);
-
-    border-radius:
-        16px;
-
-    padding:
-        17px 19px;
-
-    box-shadow:
-        var(--shadow);
-
-    transition:
-        .2s ease;
-
-}
-
-.kpi-card:hover {
-
-    transform:
-        translateY(-2px);
-
-    box-shadow:
-        var(--shadow-hover);
-
-}
-
-.kpi-head {
-
-    display:
-        flex;
-
-    justify-content:
-        space-between;
-
-    align-items:
-        center;
-
-    margin-bottom:
-        9px;
-
-}
-
-.kpi-title {
-
-    color:
-        var(--text-secondary);
-
-    font-size:
-        10px;
-
-    text-transform:
-        uppercase;
-
-    letter-spacing:
-        .07em;
-
-    font-weight:
-        800;
-
-}
-
-.kpi-icon {
-
-    width:
-        28px;
-
-    height:
-        28px;
-
-    border-radius:
-        9px;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-
-    justify-content:
-        center;
-
-    background:
-        var(--blue-soft);
-
-    color:
-        var(--blue);
-
-    font-size:
-        13px;
-
-}
-
-.kpi-value {
-
-    font-family:
-        'Plus Jakarta Sans';
-
-    font-size:
-        26px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        -.035em;
-
-    color:
-        var(--text);
-
-}
-
-.kpi-description {
-
-    font-size:
-        10px;
-
-    color:
-        var(--text-tertiary);
-
-    margin-top:
-        3px;
 
 }
 
@@ -2491,13 +2310,6 @@ div[data-testid="stDataFrame"] {
     .portfolio-summary {
 
         grid-template-columns:
-            repeat(3, 1fr);
-
-    }
-
-    .kpi-grid {
-
-        grid-template-columns:
             repeat(2, 1fr);
 
     }
@@ -2578,30 +2390,6 @@ div[data-testid="stDataFrame"] {
 
         font-size:
             9px;
-
-    }
-
-    .kpi-grid {
-
-        grid-template-columns:
-            1fr 1fr;
-
-        gap:
-            9px;
-
-    }
-
-    .kpi-card {
-
-        padding:
-            14px;
-
-    }
-
-    .kpi-value {
-
-        font-size:
-            22px;
 
     }
 
@@ -2845,10 +2633,12 @@ render_html(
     f"""
 <div class="portfolio-summary">
 
+    <!-- BENEFICIO TOTAL -->
+
     <div class="summary-card">
 
         <div class="summary-label">
-            Beneficio simulado
+            Beneficio total
         </div>
 
         <div
@@ -2864,6 +2654,8 @@ render_html(
 
     </div>
 
+
+    <!-- RENTABILIDAD -->
 
     <div class="summary-card">
 
@@ -2885,31 +2677,7 @@ render_html(
     </div>
 
 
-    <div class="summary-card">
-
-        <div class="summary-label">
-            P&L abierto
-        </div>
-
-        <div
-            class="summary-value"
-            style="
-                color:{
-                    '#16a34a'
-                    if beneficio_no_realizado >= 0
-                    else '#dc2626'
-                };
-            "
-        >
-            {beneficio_no_realizado:+,.2f} €
-        </div>
-
-        <div class="summary-detail">
-            {posiciones_con_beneficio} en beneficio
-        </div>
-
-    </div>
-
+    <!-- POSICIONES ACTIVAS -->
 
     <div class="summary-card">
 
@@ -2922,11 +2690,13 @@ render_html(
         </div>
 
         <div class="summary-detail">
-            {posiciones_con_perdida} en pérdida
+            {TOTAL_ACTIVOS_UNIVERSO} activos monitorizados
         </div>
 
     </div>
 
+
+    <!-- WIN RATE -->
 
     <div class="summary-card">
 
@@ -2940,144 +2710,6 @@ render_html(
 
         <div class="summary-detail">
             {exitos} TP · {fallos} SL
-        </div>
-
-    </div>
-
-</div>
-""",
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# KPI GRID
-# ============================================================
-
-render_html(
-    f"""
-<div class="kpi-grid">
-
-    <div class="kpi-card">
-
-        <div class="kpi-head">
-
-            <div class="kpi-title">
-                Acciones monitorizadas
-            </div>
-
-            <div class="kpi-icon">
-                ◉
-            </div>
-
-        </div>
-
-        <div class="kpi-value">
-            {TOTAL_ACTIVOS_UNIVERSO}
-        </div>
-
-        <div class="kpi-description">
-            Universo cuantitativo
-        </div>
-
-    </div>
-
-
-    <div class="kpi-card">
-
-        <div class="kpi-head">
-
-            <div class="kpi-title">
-                Señales activas
-            </div>
-
-            <div class="kpi-icon">
-                ↗
-            </div>
-
-        </div>
-
-        <div class="kpi-value">
-            {activas}
-        </div>
-
-        <div class="kpi-description">
-            {posiciones_con_beneficio} en beneficio ·
-            {posiciones_con_perdida} en pérdida
-        </div>
-
-    </div>
-
-
-    <div class="kpi-card">
-
-        <div class="kpi-head">
-
-            <div class="kpi-title">
-                Objetivos cumplidos
-            </div>
-
-            <div
-                class="kpi-icon"
-                style="
-                    background:#ecfdf3;
-                    color:#16a34a;
-                "
-            >
-                ✓
-            </div>
-
-        </div>
-
-        <div class="kpi-value">
-            {exitos}
-        </div>
-
-        <div class="kpi-description">
-            Take Profit alcanzados
-        </div>
-
-    </div>
-
-
-    <div class="kpi-card">
-
-        <div class="kpi-head">
-
-            <div class="kpi-title">
-                Beneficio simulado
-            </div>
-
-            <div
-                class="kpi-icon"
-                style="
-                    background:
-                        {"#ecfdf3"
-                        if beneficio_acumulado >= 0
-                        else "#fef2f2"};
-
-                    color:
-                        {"#16a34a"
-                        if beneficio_acumulado >= 0
-                        else "#dc2626"};
-                "
-            >
-                €
-            </div>
-
-        </div>
-
-        <div
-            class="kpi-value"
-            style="
-                color:{color_resultado};
-            "
-        >
-            {beneficio_acumulado:+,.2f} €
-        </div>
-
-        <div class="kpi-description">
-            Realizado + posiciones abiertas
         </div>
 
     </div>
@@ -3431,6 +3063,9 @@ with tab_cartera:
 
             # ------------------------------------------------
             # P&L ACTUAL
+            #
+            # Se utiliza únicamente para calcular
+            # "Rendimiento desde entrada".
             # ------------------------------------------------
 
             (
