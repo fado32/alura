@@ -1482,7 +1482,7 @@ section[data-testid="stSidebar"] {
 
 
 /* =========================================================
-   PERFORMANCE
+   PERFORMANCE / RISK REWARD
    ========================================================= */
 
 .performance-row {
@@ -1509,7 +1509,7 @@ section[data-testid="stSidebar"] {
         11px;
 
     margin-bottom:
-        17px;
+        18px;
 
 }
 
@@ -1521,8 +1521,17 @@ section[data-testid="stSidebar"] {
     flex-direction:
         column;
 
+    align-items:
+        flex-end;
+
+    text-align:
+        right;
+
     min-width:
         0;
+
+    order:
+        2;
 
 }
 
@@ -1582,10 +1591,13 @@ section[data-testid="stSidebar"] {
         column;
 
     align-items:
-        flex-end;
+        flex-start;
 
     flex-shrink:
         0;
+
+    order:
+        1;
 
 }
 
@@ -1647,8 +1659,27 @@ section[data-testid="stSidebar"] {
     justify-content:
         space-between;
 
+    align-items:
+        flex-start;
+
     margin-bottom:
-        9px;
+        3px;
+
+}
+
+.position-label-item {
+
+    display:
+        flex;
+
+    flex-direction:
+        column;
+
+    align-items:
+        center;
+
+    min-width:
+        0;
 
 }
 
@@ -1669,6 +1700,31 @@ section[data-testid="stSidebar"] {
     color:
         var(--text-tertiary);
 
+    white-space:
+        nowrap;
+
+}
+
+.position-price {
+
+    margin-top:
+        3px;
+
+    font-family:
+        'Plus Jakarta Sans';
+
+    font-size:
+        10px;
+
+    font-weight:
+        800;
+
+    color:
+        var(--text);
+
+    white-space:
+        nowrap;
+
 }
 
 .position-track {
@@ -1684,6 +1740,9 @@ section[data-testid="stSidebar"] {
 
     position:
         relative;
+
+    margin-top:
+        7px;
 
 }
 
@@ -2392,6 +2451,20 @@ div[data-testid="stDataFrame"] {
 
     }
 
+    .position-label {
+
+        font-size:
+            7px;
+
+    }
+
+    .position-price {
+
+        font-size:
+            9px;
+
+    }
+
     .app-footer {
 
         display:
@@ -3068,6 +3141,35 @@ with tab_cartera:
 
 
             # ------------------------------------------------
+            # PRECIOS DEL TRACKER
+            # ------------------------------------------------
+
+            stop_loss_text = (
+                f"{stop_loss:,.2f}"
+                if stop_loss is not None
+                else "—"
+            )
+
+            entrada_text = (
+                f"{precio_entrada:,.2f}"
+                if precio_entrada is not None
+                else "—"
+            )
+
+            actual_text = (
+                f"{precio_actual:,.2f}"
+                if precio_actual is not None
+                else "—"
+            )
+
+            take_profit_text = (
+                f"{take_profit:,.2f}"
+                if take_profit is not None
+                else "—"
+            )
+
+
+            # ------------------------------------------------
             # POSITION TRACKER
             # ------------------------------------------------
 
@@ -3146,21 +3248,56 @@ with tab_cartera:
 
     <div class="position-labels">
 
-        <span class="position-label">
-            Stop
-        </span>
+        <div class="position-label-item">
 
-        <span class="position-label">
-            Entrada
-        </span>
+            <span class="position-label">
+                Stop
+            </span>
 
-        <span class="position-label">
-            Actual
-        </span>
+            <span class="position-price">
+                {stop_loss_text}
+            </span>
 
-        <span class="position-label">
-            Take Profit
-        </span>
+        </div>
+
+
+        <div class="position-label-item">
+
+            <span class="position-label">
+                Entrada
+            </span>
+
+            <span class="position-price">
+                {entrada_text}
+            </span>
+
+        </div>
+
+
+        <div class="position-label-item">
+
+            <span class="position-label">
+                Actual
+            </span>
+
+            <span class="position-price">
+                {actual_text}
+            </span>
+
+        </div>
+
+
+        <div class="position-label-item">
+
+            <span class="position-label">
+                Take Profit
+            </span>
+
+            <span class="position-price">
+                {take_profit_text}
+            </span>
+
+        </div>
 
     </div>
 
@@ -3302,23 +3439,12 @@ with tab_cartera:
 
 
     <!-- ================================================
-         RENDIMIENTO + RISK / REWARD
+         RISK / REWARD + RENDIMIENTO
          ================================================ -->
 
     <div class="performance-row">
 
-        <div class="performance-left">
-
-            <div class="performance-label">
-                Rendimiento desde entrada
-            </div>
-
-            <div class="performance-value {performance_class}">
-                {performance_text}
-            </div>
-
-        </div>
-
+        <!-- IZQUIERDA: RISK / REWARD -->
 
         <div class="performance-rr">
 
@@ -3328,6 +3454,21 @@ with tab_cartera:
 
             <div class="performance-rr-value">
                 {ratio_rr_text}
+            </div>
+
+        </div>
+
+
+        <!-- DERECHA: RENDIMIENTO -->
+
+        <div class="performance-left">
+
+            <div class="performance-label">
+                Rendimiento desde entrada
+            </div>
+
+            <div class="performance-value {performance_class}">
+                {performance_text}
             </div>
 
         </div>
