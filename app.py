@@ -180,11 +180,6 @@ html, body, [class*="css"] {
     margin-top: 8px;
     letter-spacing: -0.02em;
 }
-.kpi-desc {
-    font-size: 12px;
-    color: #94a3b8;
-    margin-top: 4px;
-}
 
 /* CARTERA / ASSET CARDS */
 .asset-card {
@@ -396,6 +391,31 @@ else:
     win_rate = (exitos / total_cerradas * 100) if total_cerradas else 0
 
 # ============================================================
+# CÁLCULO DE BENEFICIOS PARA KPIS
+# ============================================================
+capital_inicial = 10000.0
+capital_por_alerta = 1000.0
+beneficio_acumulado_kpi = 0.0
+
+df_kpi_sim = df_hist.copy()
+if "Fecha" in df_kpi_sim.columns and not df_kpi_sim.empty:
+    df_kpi_sim = df_kpi_sim.dropna(subset=["Fecha"]).sort_values("Fecha")
+    for _, row in df_kpi_sim.iterrows():
+        estado_op = str(row.get("Estado", ""))
+        p_ent = float(row["Precio_Alerta"]) if "Precio_Alerta" in row and pd.notna(row["Precio_Alerta"]) else 100.0
+        p_sl = float(row["Stop_Loss"]) if "Stop_Loss" in row and pd.notna(row["Stop_Loss"]) else p_ent * 0.96
+        p_tp = float(row["Take_Profit"]) if "Take_Profit" in row and pd.notna(row["Take_Profit"]) else p_ent * 1.10
+        pct_g = (p_tp - p_ent) / p_ent if p_ent > 0 else 0.10
+        pct_p = (p_ent - p_sl) / p_ent if p_ent > 0 else 0.04
+        if "OBJETIVO_CUMPLIDO" in estado_op:
+            beneficio_acumulado_kpi += capital_por_alerta * pct_g
+        elif "STOP_SALTADO" in estado_op:
+            beneficio_acumulado_kpi -= capital_por_alerta * pct_p
+
+rentabilidad_kpi_pct = (beneficio_acumulado_kpi / capital_inicial * 100) if capital_inicial else 0
+color_rentabilidad = "var(--success)" if beneficio_acumulado_kpi >= 0 else "var(--danger)"
+
+# ============================================================
 # HEADER & KPIS
 # ============================================================
 render_html(
@@ -415,24 +435,20 @@ render_html(
     f"""
 <div class="kpi-grid">
     <div class="kpi-card">
-        <div class="kpi-title">Universo Global</div>
+        <div class="kpi-title">Activos en Universo</div>
         <div class="kpi-val">{TOTAL_ACTIVOS_UNIVERSO}</div>
-        <div class="kpi-desc">activos analizados en continuo</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-title">Señales Totales</div>
+        <div class="kpi-title">Señales Registradas</div>
         <div class="kpi-val">{total_alertas}</div>
-        <div class="kpi-desc">registros en historial</div>
     </div>
     <div class="kpi-card">
         <div class="kpi-title">Objetivos Cumplidos</div>
         <div class="kpi-val">{exitos}</div>
-        <div class="kpi-desc">operaciones exitosas</div>
     </div>
     <div class="kpi-card">
-        <div class="kpi-title">Win Rate Global</div>
-        <div class="kpi-val">{win_rate:.1f}%</div>
-        <div class="kpi-desc">ratio de efectividad</div>
+        <div class="kpi-title">Efectividad & Beneficio</div>
+        <div class="kpi-val" style="font-size: 21px;">{win_rate:.1f}% <span style="font-size: 13px; font-weight: 700; color: {color_rentabilidad}; margin-left: 2px;">({beneficio_acumulado_kpi:+,.0f} € / {rentabilidad_kpi_pct:+.1f}%)</span></div>
     </div>
 </div>
 """,
