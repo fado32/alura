@@ -36,33 +36,33 @@ TRE.MC,Técnicas Reunidas,Ingeniería / Energía,🛠️
 UNI.MC,Unicaja Banco,Banca,🏦
 VID.MC,Vidrala,Industrial / Envases,🍾
 MCG.L,Mobico,Buses,🏗️
-ITX.MC,Inditex,Consumo C�clico / Textil,??
-BBVA.MC,BBVA,Banca,??
-SAN.MC,Banco Santander,Banca,??
-IBE.MC,Iberdrola,Utilities / Energ�as,?
-REP.MC,Repsol,Energ�a / Petr�leo,???
-TEF.MC,Telef�nica,Telecomunicaciones,??
-ACS.MC,ACS,Infraestructuras y Construcci�n,???
-AENA.MC,Aena,Aeropuertos / Servicios,??
-FER.MC,Ferrovial,Infraestructuras,???
-BKT.MC,Bankinter,Banca,??
-AAPL,Apple Inc.,Tecnolog�a / Hardware,??
-MSFT,Microsoft Corp.,Tecnolog�a / Software,??
-NVDA,NVIDIA Corp.,Semiconductores / IA,?
-AMZN,Amazon.com Inc.,Consumo Discrecional / E-commerce,??
-GOOGL,Alphabet Inc. (Google),Tecnolog�a / Servicios Internet,??
-META,Meta Platforms Inc.,Tecnolog�a / Redes Sociales,??
-TSLA,Tesla Inc.,Automoci�n / Veh�culos El�ctricos,??
-JPM,JPMorgan Chase & Co.,Servicios Financieros / Banca,???
-ASML.AS,ASML Holding NV,Tecnolog�a / Semiconductores,??
-MC.PA,LVMH Mo�t Hennessy Louis Vuitton,Consumo Discrecional / Lujo,??
-SAP.DE,SAP SE,Tecnolog�a / Software Empresarial,??
-SIE.DE,Siemens AG,Industrial / Automoci�n,??
-SAN.PA,Sanofi SA,Salud / Farmac�utica,??
-SPY,SPDR S&P 500 ETF Trust,ETF / Renta Variable EE.UU.,??
-QQQ,Invesco QQQ Trust,ETF / Tecnolog�a EE.UU.,??
-VGK,Vanguard FTSE Europe ETF,ETF / Renta Variable Europa,????
-IWM,iShares Russell 2000 ETF,ETF / Small Caps EE.UU.,??
-EEM,iShares MSCI Emerging Markets ETF,ETF / Mercados Emergentes,??
-GLD,SPDR Gold Shares,ETF / Materias Primas (Oro),??
-TLT,iShares 20+ Year Treasury Bond ETF,ETF / Renta Fija (Bonos),??
+ITX.MC,Inditex,Consumo Cíclico / Textil,👗
+BBVA.MC,BBVA,Banca,🏦
+SAN.MC,Banco Santander,Banca,🏦
+IBE.MC,Iberdrola,Utilities / Energías,⚡
+REP.MC,Repsol,Energía / Petróleo,🛢️
+TEF.MC,Telefónica,Telecomunicaciones,📡
+ACS.MC,ACS,Infraestructuras y Construcción,🏗️
+AENA.MC,Aena,Aeropuertos / Servicios,✈️
+FER.MC,Ferrovial,Infraestructuras,🛣️
+BKT.MC,Bankinter,Banca,🏦
+AAPL,Apple Inc.,Tecnología / Hardware,🍏
+MSFT,Microsoft Corp.,Tecnología / Software,💻
+NVDA,NVIDIA Corp.,Semiconductores / IA,⚡
+AMZN,Amazon.com Inc.,Consumo Discrecional / E-commerce,📦
+GOOGL,Alphabet Inc. (Google),Tecnología / Servicios Internet,🔍
+META,Meta Platforms Inc.,Tecnología / Redes Sociales,🌐
+TSLA,Tesla Inc.,Automoción / Vehículos Eléctricos,🚗
+JPM,JPMorgan Chase & Co.,Servicios Financieros / Banca,🏛️
+ASML.AS,ASML Holding NV,Tecnología / Semiconductores,🔬
+MC.PA,LVMH Moët Hennessy Louis Vuitton,Consumo Discrecional / Lujo,👜
+SAP.DE,SAP SE,Tecnología / Software Empresarial,💼
+SIE.DE,Siemens AG,Industrial / Automoción,⚙️
+SAN.PA,Sanofi SA,Salud / Farmacéutica,💊
+SPY,SPDR S&P 500 ETF Trust,ETF / Renta Variable EE.UU.,📊
+QQQ,Invesco QQQ Trust,ETF / Tecnología EE.UU.,📈
+VGK,Vanguard FTSE Europe ETF,ETF / Renta Variable Europa,🇪🇺
+IWM,iShares Russell 2000 ETF,ETF / Small Caps EE.UU.,📉
+EEM,iShares MSCI Emerging Markets ETF,ETF / Mercados Emergentes,🌏
+GLD,SPDR Gold Shares,ETF / Materias Primas (Oro),🪙
+TLT,iShares 20+ Year Treasury Bond ETF,ETF / Renta Fija (Bonos),📜
