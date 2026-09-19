@@ -1,22 +1,27 @@
-import csv
-import os
-import random
-import subprocess
+# ALURA QUANT V3 (Sin IBEX y con Umbrales Flexibles)
+import csv, os, subprocess
 from datetime import datetime, timedelta
-from openai import OpenAI
+from zoneinfo import ZoneInfo
 import pandas as pd
 import yfinance as yf
+from openai import OpenAI
 
-# ==========================================
-# CONFIGURACIÓN Y MAESTRO DE ACTIVOS
-# ==========================================
-client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-MODELO_LOCAL = "llama3.2"
-ARCHIVO_HISTORIAL = "historial_alertas.csv"
-UMBRAL_VOLUMEN = 1.2
+TZ=ZoneInfo("Europe/Madrid")
+MODO_EJECUCION="AUTO"  # AUTO | 14 | 18
+ARCHIVO_HISTORIAL="historial_alertas.csv"
+ARCHIVO_UNIVERSO="universo_activos.csv"
+CAPITAL=100000.0
+RIESGO_POR_OPERACION=0.005
+ATR_MULTIPLICADOR=1.75
+RR_TARGET=2.5
+UMBRAL_SCORE_18=55   # Reducido para más flexibilidad
+UMBRAL_SCORE_14=50   # Reducido para más flexibilidad
+LIQUIDEZ_MIN_EUR=500000
+CUARENTENA_STOP_DIAS=15
+client=OpenAI(base_url="http://localhost:11434/v1",api_key="ollama")
+MODELO_LOCAL="llama3.2"
 
-# Diccionario Maestro: Ticker -> (Nombre, Sector, Icono)
-MAESTRO_ACTIVOS = {
+MAESTRO_ACTIVOS_BASE = {
     "TLGO.MC": ("Talgo", "Industrial", "🚆"),
     "TUB.MC": ("Tubacex", "Industrial", "⚙️"),
     "DOM.MC": ("Global Dominion", "Servicios / Tecnología", "🔌"),
@@ -56,480 +61,166 @@ MAESTRO_ACTIVOS = {
     "MCG.L": ("Grupo San José", "Construcción", "🏗️"),
 }
 
-activos = list(MAESTRO_ACTIVOS.keys())
 
+def cargar_universo():
+    universo=dict(MAESTRO_ACTIVOS_BASE)
+    if os.path.exists(ARCHIVO_UNIVERSO):
+        try:
+            df=pd.read_csv(ARCHIVO_UNIVERSO)
+            for _,r in df.iterrows():
+                t=str(r.get("Ticker","")).strip()
+                if t: universo[t]=(str(r.get("Empresa",t)),str(r.get("Sector","General")),str(r.get("Icono","📈")))
+        except Exception as e: print(f"⚠️ Error cargando universo: {e}")
+    return universo
 
-# ==========================================
-# GESTIÓN DE HISTORIAL Y FILTROS DE MEMORIA
-# ==========================================
-def obtener_tickers_bloqueados():
-    """Devuelve los tickers activos o en cuarentena para evitar duplicidades."""
-    if not os.path.exists(ARCHIVO_HISTORIAL):
-        return set()
+MAESTRO_ACTIVOS=cargar_universo(); activos=list(MAESTRO_ACTIVOS)
 
-    bloqueados = set()
-    hoy = datetime.now()
+def ahora(): return datetime.now(TZ)
+def modo_actual(): return MODO_EJECUCION if MODO_EJECUCION in ("14","18") else ("14" if ahora().hour<16 else "18")
+def norm(df):
+    if isinstance(df.columns,pd.MultiIndex): df.columns=df.columns.get_level_values(0)
+    return df
+def diario(t,period="1y"):
+    try: return norm(yf.download(t,period=period,interval="1d",auto_adjust=True,progress=False,threads=False)).dropna(subset=["Close","High","Low","Volume"])
+    except Exception: return pd.DataFrame()
+def intra(t):
+    try: return norm(yf.download(t,period="5d",interval="15m",auto_adjust=True,progress=False,threads=False)).dropna(subset=["Close","High","Low","Volume"])
+    except Exception: return pd.DataFrame()
+def datos(t,modo):
+    d=diario(t)
+    if d.empty or modo!="14": return d
+    x=intra(t)
+    if x.empty: return d
+    idx=pd.to_datetime(x.index); idx=idx.tz_convert(TZ).tz_localize(None) if getattr(idx,"tz",None) is not None else idx
+    x.index=idx; hoy=ahora().date(); x=x[x.index.date==hoy]
+    if x.empty:return d
+    p=pd.DataFrame({"Open":[float(x.Open.iloc[0])],"High":[float(x.High.max())],"Low":[float(x.Low.min())],"Close":[float(x.Close.iloc[-1])],"Volume":[float(x.Volume.sum())]},index=[pd.Timestamp(hoy)])
+    d=norm(d.copy()); d.index=pd.to_datetime(d.index).tz_localize(None); d=d[d.index.date!=hoy]
+    inicio=ahora().replace(hour=9,minute=0,second=0,microsecond=0); mins=max(30,min(510,int((ahora()-inicio).total_seconds()/60))); p.loc[p.index[0],"Volume"]*=510/mins
+    return pd.concat([d,p]).sort_index()
+def rsi(s,n=14):
+    z=s.diff(); g=z.clip(lower=0); l=-z.clip(upper=0); ag=g.ewm(alpha=1/n,adjust=False,min_periods=n).mean(); al=l.ewm(alpha=1/n,adjust=False,min_periods=n).mean(); rs=ag/al.replace(0,pd.NA); return 100-100/(1+rs)
+def atr(d,n=14):
+    p=d.Close.shift(); tr=pd.concat([d.High-d.Low,(d.High-p).abs(),(d.Low-p).abs()],axis=1).max(axis=1); return tr.ewm(alpha=1/n,adjust=False,min_periods=n).mean()
 
-    with open(ARCHIVO_HISTORIAL, mode="r", encoding="utf-8") as f:
-        reader = list(csv.reader(f))
-        if len(reader) <= 1:
-            return bloqueados
+def bloqueados():
+    if not os.path.exists(ARCHIVO_HISTORIAL):return set()
+    out=set(); hoy=ahora().date()
+    try:
+        for r in csv.DictReader(open(ARCHIVO_HISTORIAL,encoding="utf-8")):
+            try:f=datetime.strptime(r.get("Fecha","").split()[0],"%Y-%m-%d").date()
+            except:continue
+            if "ACTIVA" in r.get("Estado","") or ("STOP_SALTADO" in r.get("Estado","") and (hoy-f).days<CUARENTENA_STOP_DIAS):out.add(r.get("Ticker"))
+    except:pass
+    return out
 
-        for fila in reader[1:]:
-            if len(fila) >= 2:
-                fecha_alerta_str = fila[0]
-                ticker = fila[1]
-                estado = fila[-1] if len(fila) >= 8 else ""
-
-                try:
-                    fecha_alerta = datetime.strptime(
-                        fecha_alerta_str.split()[0], "%Y-%m-%d"
-                    )
-                except ValueError:
-                    continue
-
-                if "ACTIVA" in estado:
-                    bloqueados.add(ticker)
-                elif "STOP_SALTADO" in estado:
-                    if (hoy - fecha_alerta).days < 15:
-                        bloqueados.add(ticker)
-
-    return bloqueados
-
-
-# ==========================================
-# CÁLCULO MATEMÁTICO (ATR Y NIVELES)
-# ==========================================
-def calcular_atr(data, window=14):
-    """Calcula el Average True Range (ATR) para la gestión dinámica de volatilidad."""
-    high_low = data["High"] - data["Low"]
-    high_close = (data["High"] - data["Close"].shift()).abs()
-    low_close = (data["Low"] - data["Close"].shift()).abs()
+def analizar(t,modo):
+    d=datos(t,modo)
+    if len(d)<220:return None
+    d=d.copy(); d["E20"]=d.Close.ewm(span=20,adjust=False).mean(); d["E50"]=d.Close.ewm(span=50,adjust=False).mean(); d["E200"]=d.Close.ewm(span=200,adjust=False).mean(); d["RSI"]=rsi(d.Close); d["ATR"]=atr(d); d["VM20"]=d.Volume.rolling(20).mean(); d["TO20"]=(d.Close*d.Volume).rolling(20).mean(); d["ROC20"]=d.Close.pct_change(20)*100; d["H20"]=d.High.rolling(20).max().shift(1); d["CLV"]=((d.Close-d.Low)/(d.High-d.Low).replace(0,pd.NA)).fillna(0)
+    x=d.iloc[-1]; req=["Close","E50","E200","RSI","ATR","VM20","TO20","ROC20","H20"]
+    if any(pd.isna(x[k]) for k in req):return None
+    price=float(x.Close); e50=float(x.E50); e200=float(x.E200); R=float(x.RSI); A=float(x.ATR); rv=float(x.Volume/x.VM20); to=float(x.TO20); roc=float(x.ROC20); br=price>float(x.H20); clv=float(x.CLV)
+    if to<LIQUIDEZ_MIN_EUR:return None
     
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = tr.rolling(window=window).mean()
-    return atr
-
-
-def calcular_soportes_resistencias(data):
-    """Calcula matemáticamente soportes y resistencias usando mínimos y máximos locales."""
-    ultimos_60 = data.tail(60)
-    soporte_matematico = float(ultimos_60["Low"].min())
-    resistencia_matematica = float(ultimos_60["High"].max())
-
-    ultimos_15 = data.tail(15)
-    soporte_corto = float(ultimos_15["Low"].min())
-
-    return (
-        round(soporte_matematico, 2),
-        round(resistencia_matematica, 2),
-        round(soporte_corto, 2),
-    )
-
-
-def analizar_activo(ticker_symbol):
-    ticker_obj = yf.Ticker(ticker_symbol)
-    data = ticker_obj.history(period="6mo", auto_adjust=True)
-
-    if data.empty or len(data) < 50:
-        return None
-
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-
-    if "Close" not in data.columns or "Volume" not in data.columns:
-        return None
-
-    data = data.dropna(subset=["Close", "Volume"])
-
-    info = ticker_obj.info
-    per = info.get("trailingPE", None)
-    cap_mercado = info.get("marketCap", 0)
-
-    if per is not None and (per < 0 or per > 100):
-        return None
-
-    # Indicadores técnicos en Python
-    data["EMA_50"] = data["Close"].ewm(span=50, adjust=False).mean()
-
-    delta = data["Close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    data["RSI"] = 100 - (100 / (1 + rs))
-
-    data["Vol_Mean_20"] = data["Volume"].rolling(window=20).mean()
-    data["ATR"] = calcular_atr(data, window=14)
-
-    ultimo_precio = float(data["Close"].iloc[-1])
-    ultima_ema = float(data["EMA_50"].iloc[-1])
-    ultimo_rsi = float(data["RSI"].iloc[-1])
-    volumen_hoy = float(data["Volume"].iloc[-1])
-    volumen_medio = float(data["Vol_Mean_20"].iloc[-1])
-    ultimo_atr = float(data["ATR"].iloc[-1])
-
-    if pd.isna(ultimo_atr) or ultimo_atr == 0:
-        return None
-
-    ratio_volumen = volumen_hoy / volumen_medio if volumen_medio > 0 else 1.0
-    distancia_ema = ((ultimo_precio - ultima_ema) / ultima_ema) * 100
-
-    soporte_3m, resistencia_3m, soporte_reciente = (
-        calcular_soportes_resistencias(data)
-    )
-
-    distancia_al_soporte = (
-        (ultimo_precio - soporte_reciente) / soporte_reciente
-    ) * 100
-    cerca_de_soporte = 0 <= distancia_al_soporte <= 3.5
-
-    tendencia_alcista = ultimo_precio > ultima_ema
-    rsi_valido = 45 <= ultimo_rsi <= 75
-    volumen_ok = ratio_volumen >= UMBRAL_VOLUMEN
-
-    if volumen_ok and tendencia_alcista and rsi_valido:
-        precio_entrada = round(ultimo_precio, 2)
-        
-        # --- GESTIÓN DE RIESGO DINÁMICA (ATR) ---
-        stop_loss_atr = round(precio_entrada - (1.5 * ultimo_atr), 2)
-        stop_loss = min(stop_loss_atr, round(soporte_reciente * 0.99, 2))
-        
-        riesgo = precio_entrada - stop_loss
-        if riesgo <= 0:
-            return None
-            
-        # Take profit dinámico orientado a un R/R estricto de 1:2.5
-        take_profit = round(precio_entrada + (2.5 * riesgo), 2)
-        beneficio = take_profit - precio_entrada
-        ratio_rr = round(beneficio / riesgo, 2)
-
-        # Obtener metadatos del maestro
-        nombre, sector, icono = MAESTRO_ACTIVOS.get(
-            ticker_symbol, (ticker_symbol, "General", "📈")
-        )
-
-        return {
-            "ticker": ticker_symbol,
-            "empresa": nombre,
-            "sector": sector,
-            "icono": icono,
-            "precio": precio_entrada,
-            "stop_loss": stop_loss,
-            "take_profit": take_profit,
-            "ratio_rr": ratio_rr,
-            "per": round(per, 2) if per else "N/D",
-            "cap_mercado_millones": (
-                round(cap_mercado / 1e6, 1) if cap_mercado else "N/D"
-            ),
-            "distancia_ema_pct": round(distancia_ema, 2),
-            "rsi": round(ultimo_rsi, 2),
-            "ratio_volumen": round(ratio_volumen, 1),
-            "soporte": soporte_reciente,
-            "resistencia": resistencia_3m,
-            "cerca_soporte": cerca_de_soporte,
-            "distancia_soporte_pct": round(distancia_al_soporte, 2),
-        }
-
-    return None
-
-
-# ==========================================
-# MOTOR DE COMENTARIOS DE IA DINÁMICOS Y VARIADOS
-# ==========================================
-def generar_comentario_ia_variado(candidato):
-    """Genera análisis variados cambiando estilo, estructura y tono del prompt."""
-    enfoques = [
-        (
-            "Análisis centrado en Volumen e Impulso",
-            "Destaca el pico de volumen relativo frente a la media y cómo la presión compradora valida la entrada.",
-        ),
-        (
-            "Análisis centrado en la Estructura de Soporte y Riesgo ATR",
-            "Concéntrate en la distancia al soporte técnico, el nivel de Stop Loss por volatilidad y la protección del capital.",
-        ),
-        (
-            "Análisis de Relación Riesgo/Beneficio (R/R)",
-            "Enfócate en la asimetría favorable de la operación (Ratio R/R 1:2.5) y el objetivo de Take Profit.",
-        ),
-        (
-            "Análisis Táctico de Ruptura y Tendencia",
-            "Menciona la posición respecto a la EMA 50, el valor del RSI y el comportamiento sectorial.",
-        ),
+    score=0; why=[]
+    # Eliminados los criterios del IBEX y ajustados factores técnicos puros
+    tests=[
+        (price>e50, 15, "Precio > EMA50"),
+        (e50>e200, 20, "EMA50 > EMA200"),
+        (55<=R<=75, 15, "RSI 55-75"),
+        (roc>5, 10, "ROC20 > 5%"),
+        (rv>=1.5, 15, "RVOL >= 1.5x"),
+        (rv>=1.2 and rv<1.5, 8, "RVOL >= 1.2x"),
+        (clv>=.70, 5, "Cierre cerca de máximos"),
+        (br, 15, "Ruptura máximo 20 sesiones")
     ]
+    
+    for ok,pts,txt in tests:
+        if ok:score+=pts;why.append(txt)
+        
+    if score<(UMBRAL_SCORE_14 if modo=="14" else UMBRAL_SCORE_18) or rv<1.2 or not(price>e50 and e50>e200):return None
+    
+    support=float(d.Low.iloc[-16:-1].min()); resistance=float(d.High.iloc[-61:-1].max()); stop=min(price-ATR_MULTIPLICADOR*A,support*.99); risk=price-stop
+    if risk<=0 or risk>price*.20:return None
+    shares=int((CAPITAL*RIESGO_POR_OPERACION)/risk)
+    if shares<1:return None
+    
+    return {
+        "ticker":t,
+        "empresa":MAESTRO_ACTIVOS[t][0],
+        "sector":MAESTRO_ACTIVOS[t][1],
+        "icono":MAESTRO_ACTIVOS[t][2],
+        "modo":modo,
+        "precio":round(price,2),
+        "stop":round(stop,2),
+        "tp":round(price+RR_TARGET*risk,2),
+        "acciones":shares,
+        "nominal":round(shares*price,2),
+        "riesgo":round(shares*risk,2),
+        "score":score,
+        "rvol":round(rv,2),
+        "rsi":round(R,2),
+        "roc20":round(roc,2),
+        "atr":round(A,2),
+        "regimen":"N/A",
+        "razones":"; ".join(why),
+        "soporte":round(support,2),
+        "resistencia":round(resistance,2)
+    }
 
-    enfoque_nombre, enfoque_instruccion = random.choice(enfoques)
-
-    prompt_sistema = (
-        f"Eres un analista cuantitativo de mercados en Alura Quant. Tu objetivo es hacer comentarios breves, "
-        f"directos y variados. Hoy debes redactar el comentario usando este estilo específico: {enfoque_nombre}.\n"
-        f"Instrucción de estilo: {enfoque_instruccion}\n\n"
-        f"Reglas estrictas:\n"
-        f"- Escribe en un único párrafo conciso (máximo 3 frases).\n"
-        f"- No uses siempre la misma estructura formal o saludos prefabricados.\n"
-        f"- Incluye números concretos (volumen, entradas o ratios) en tu argumento."
-    )
-
-    prompt_datos = (
-        f"Activo: {candidato['empresa']} ({candidato['ticker']}) | Sector: {candidato['sector']}\n"
-        f"Precio Entrada: {candidato['precio']} € | Stop Loss: {candidato['stop_loss']} € | Take Profit: {candidato['take_profit']} €\n"
-        f"Ratio R/R: {candidato['ratio_rr']} | Ratio Volumen: {candidato['ratio_volumen']}x | RSI: {candidato['rsi']}\n"
-        f"Soporte Reciente: {candidato['soporte']} € | Resistencia 3M: {candidato['resistencia']} €"
-    )
-
+def comentario(c):
     try:
-        response = client.chat.completions.create(
-            model=MODELO_LOCAL,
-            messages=[
-                {"role": "system", "content": prompt_sistema},
-                {"role": "user", "content": prompt_datos},
-            ],
-            temperature=0.75,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"Señal alcista con ratio R/R de 1:{candidato['ratio_rr']} y repunte de volumen x{candidato['ratio_volumen']}."
+        q=f"{c['empresa']} ({c['ticker']}): precio {c['precio']}€, SL {c['stop']}€, TP {c['tp']}€, score {c['score']}/100, RVOL {c['rvol']}x, RSI {c['rsi']}, ROC20 {c['roc20']}%. Razones: {c['razones']}. Redacta 2 frases técnicas en español. No modifiques niveles y no prometas rentabilidad."
+        r=client.chat.completions.create(model=MODELO_LOCAL,messages=[{"role":"system","content":"La IA solo explica una señal cuantitativa; no modifica la señal."},{"role":"user","content":q}],temperature=.4); return r.choices[0].message.content.strip()
+    except:return f"Señal cuantitativa score {c['score']}/100, RVOL {c['rvol']}x y R/R 1:{RR_TARGET}. No garantiza rentabilidad."
 
+def guardar(c,txt):
+    fields=["Fecha","Ticker","Empresa","Sector","Icono","Modo","Precio_Alerta","Stop_Loss","Take_Profit","Ratio_RR","Riesgo_Euros","Acciones","Nominal","Score","RVOL","RSI","ROC20","ATR","Regimen","Razones","Analisis_IA","Estado","Fecha_Salida","Resultado_R","MAE_R","MFE_R"]; new=not os.path.exists(ARCHIVO_HISTORIAL)
+    with open(ARCHIVO_HISTORIAL,"a",newline="",encoding="utf-8") as f:
+        w=csv.DictWriter(f,fieldnames=fields); w.writeheader() if new else None; w.writerow({"Fecha":ahora().strftime("%Y-%m-%d %H:%M"),"Ticker":c["ticker"],"Empresa":c["empresa"],"Sector":c["sector"],"Icono":c["icono"],"Modo":c["modo"],"Precio_Alerta":c["precio"],"Stop_Loss":c["stop"],"Take_Profit":c["tp"],"Ratio_RR":RR_TARGET,"Riesgo_Euros":c["riesgo"],"Acciones":c["acciones"],"Nominal":c["nominal"],"Score":c["score"],"RVOL":c["rvol"],"RSI":c["rsi"],"ROC20":c["roc20"],"ATR":c["atr"],"Regimen":c["regimen"],"Razones":c["razones"],"Analisis_IA":txt.replace("\n"," "),"Estado":"ACTIVA","Fecha_Salida":"","Resultado_R":"","MAE_R":"","MFE_R":""})
 
-# ==========================================
-# GUARDADO DE DATOS (CON FORMATO DE FECHA DIARIO)
-# ==========================================
-def guardar_en_csv(candidato, comentario_ia):
-    archivo_existe = os.path.exists(ARCHIVO_HISTORIAL)
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
+def auditar():
+    if not os.path.exists(ARCHIVO_HISTORIAL):return
+    try:df=pd.read_csv(ARCHIVO_HISTORIAL)
+    except:return
+    changed=False
+    for i,r in df.iterrows():
+        if str(r.get("Estado"))!="ACTIVA":continue
+        try:
+            f=pd.to_datetime(r.Fecha).date(); d=norm(yf.download(r.Ticker,start=(f+timedelta(days=1)).isoformat(),auto_adjust=True,progress=False,threads=False));
+            if d.empty:continue
+            sl,tp=float(r.Stop_Loss),float(r.Take_Profit)
+            for idx,v in d.iterrows():
+                lo,hi=float(v.Low),float(v.High)
+                if lo<=sl: state,res="STOP_SALTADO 🔴",-1.0
+                elif hi>=tp: state,res="OBJETIVO_CUMPLIDO 🟢",RR_TARGET
+                else:continue
+                df.at[i,"Estado"]=state; df.at[i,"Fecha_Salida"]=pd.Timestamp(idx).strftime("%Y-%m-%d"); df.at[i,"Resultado_R"]=res; changed=True; break
+        except:continue
+    if changed:df.to_csv(ARCHIVO_HISTORIAL,index=False)
+    closed=df[df.Estado.astype(str).str.contains("OBJETIVO|STOP",regex=True,na=False)]
+    if len(closed):print(f"📊 Cerradas {len(closed)} | Expectancy {pd.to_numeric(closed.Resultado_R,errors='coerce').mean():.2f} R")
 
-    cabeceras = [
-        "Fecha",
-        "Ticker",
-        "Empresa",
-        "Sector",
-        "Icono",
-        "Precio_Alerta",
-        "Stop_Loss",
-        "Take_Profit",
-        "Ratio_RR",
-        "Ratio_Volumen",
-        "Analisis_IA",
-        "Estado",
-    ]
-
-    with open(ARCHIVO_HISTORIAL, mode="a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        if not archivo_existe:
-            writer.writerow(cabeceras)
-
-        writer.writerow(
-            [
-                fecha_hoy,
-                candidato["ticker"],
-                candidato["empresa"],
-                candidato["sector"],
-                candidato["icono"],
-                candidato["precio"],
-                candidato["stop_loss"],
-                candidato["take_profit"],
-                candidato["ratio_rr"],
-                candidato["ratio_volumen"],
-                comentario_ia.replace("\n", " "),
-                "ACTIVA",
-            ]
-        )
-
-
-# ==========================================
-# AUDITORÍA SECUENCIAL (CRONOLÓGICA / ANTI-LOOK-AHEAD)
-# ==========================================
-def auditar_y_mostrar_estadisticas():
-    if not os.path.exists(ARCHIVO_HISTORIAL):
-        print("ℹ️ No hay historial de alertas previo todavía.\n")
-        return
-
-    with open(ARCHIVO_HISTORIAL, mode="r", encoding="utf-8") as f:
-        reader = list(csv.reader(f))
-        if len(reader) <= 1:
-            return
-        cabecera = reader[0]
-        filas = reader[1:]
-
-    filas_actualizadas = []
-    cambios_realizados = False
-
-    for fila in filas:
-        if len(fila) < 8:
-            filas_actualizadas.append(fila)
-            continue
-
-        fecha_alerta_str = fila[0].split()[0]
-        ticker = fila[1]
-        estado = fila[-1]
-
-        idx_precio = 5 if len(fila) >= 12 else 2
-        idx_sl = 6 if len(fila) >= 12 else 3
-        idx_tp = 7 if len(fila) >= 12 else 4
-
-        precio_alerta = float(fila[idx_precio]) if fila[idx_precio] else 0.0
-        stop_val = (
-            float(fila[idx_sl])
-            if fila[idx_sl]
-            else round(precio_alerta * 0.96, 2)
-        )
-        tp_val = (
-            float(fila[idx_tp])
-            if fila[idx_tp]
-            else round(precio_alerta * 1.10, 2)
-        )
-
-        if "ACTIVA" in estado:
-            data = yf.download(
-                ticker,
-                start=fecha_alerta_str,
-                progress=False,
-                auto_adjust=True,
-            )
-            if not data.empty and len(data) > 0:
-                if isinstance(data.columns, pd.MultiIndex):
-                    data.columns = data.columns.get_level_values(0)
-
-                # Simulación cronológica vela a vela
-                estado_calculado = "ACTIVA"
-                for _, vela in data.iterrows():
-                    low_v = float(vela["Low"])
-                    high_v = float(vela["High"])
-
-                    toco_sl = low_v <= stop_val
-                    toco_tp = high_v >= tp_val
-
-                    if toco_sl and toco_tp:
-                        estado_calculado = "STOP_SALTADO 🔴"
-                        break
-                    elif toco_sl:
-                        estado_calculado = "STOP_SALTADO 🔴"
-                        break
-                    elif toco_tp:
-                        estado_calculado = "OBJETIVO_CUMPLIDO 🟢"
-                        break
-
-                if estado_calculado != "ACTIVA":
-                    fila[-1] = estado_calculado
-                    cambios_realizados = True
-
-        filas_actualizadas.append(fila)
-
-    if cambios_realizados:
-        with open(
-            ARCHIVO_HISTORIAL, mode="w", newline="", encoding="utf-8"
-        ) as f:
-            writer = csv.writer(f)
-            writer.writerow(cabecera)
-            writer.writerows(filas_actualizadas)
-
-    total = len(filas_actualizadas)
-    exitos = sum(
-        1 for f in filas_actualizadas if "OBJETIVO_CUMPLIDO" in f[-1]
-    )
-    fallos = sum(1 for f in filas_actualizadas if "STOP_SALTADO" in f[-1])
-    activas = sum(1 for f in filas_actualizadas if "ACTIVA" in f[-1])
-
-    tasa_acierto = (
-        (exitos / (exitos + fallos) * 100) if (exitos + fallos) > 0 else 0
-    )
-
-    print("=" * 50)
-    print("📊 ESTADÍSTICAS DEL HISTORIAL DE ALERTAS")
-    print("=" * 50)
-    print(f"• Total Alertas Registradas: {total}")
-    print(f"• Objetivos Cumplidos (🟢): {exitos}")
-    print(f"• Stops Saltados (🔴): {fallos}")
-    print(f"• Aún Activas (⏳): {activas}")
-    if (exitos + fallos) > 0:
-        print(f"• Tasa de Acierto Histórica: {tasa_acierto:.1f}%")
-    print("=" * 50 + "\n")
-
-
-# ==========================================
-# SUBIDA AUTOMÁTICA A GITHUB Y STREAMLIT
-# ==========================================
-def subir_a_github():
+def git():
     try:
-        subprocess.run(["git", "add", "."], check=True)
-        status = subprocess.run(
-            ["git", "status", "--porcelain"], capture_output=True, text=True
-        )
+        subprocess.run(["git","add","."],check=True); s=subprocess.run(["git","status","--porcelain"],capture_output=True,text=True)
+        if s.stdout.strip():subprocess.run(["git","commit","-m","Alura Quant V3 sin IBEX y umbrales relajados"],check=True); subprocess.run(["git","push","origin","main"],check=True)
+    except Exception as e:print(f"ℹ️ Git: {e}")
 
-        if status.stdout.strip():
-            subprocess.run(
-                ["git", "commit", "-m", "Auto-update alertas dinámicas ATR y auditoría secuencial"],
-                check=True,
-            )
-            subprocess.run(["git", "push", "origin", "main"], check=True)
-            print("🚀 ¡Cambios y datos subidos con éxito a GitHub y Streamlit Cloud!")
-        else:
-            print("💤 Sin cambios nuevos. Todo al día.")
+def main():
+    modo=modo_actual(); print(f"ALURA QUANT V3 | {ahora():%Y-%m-%d %H:%M} Madrid | {modo} | {len(activos)} valores"); auditar(); blocked=bloqueados(); print(f"Bloqueados: {len(blocked)}")
+    out=[]
+    for n,t in enumerate(activos,1):
+        if t in blocked:continue
+        print(f"[{n}/{len(activos)}] {t}",end="\r")
+        try:
+            c=analizar(t,modo)
+            if c:out.append(c)
+        except Exception as e:print(f"\n⚠️ {t}: {e}")
+    out.sort(key=lambda x:(x["score"],x["rvol"]),reverse=True); print(f"\nSeñales: {len(out)}")
+    for c in out:
+        txt=comentario(c); guardar(c,txt); print(f"\n{c['icono']} {c['empresa']} | Score {c['score']} | Entrada {c['precio']} | SL {c['stop']} | TP {c['tp']} | {c['acciones']} acciones\n{txt}")
+    git()
 
-    except Exception as e:
-        print(f"ℹ️ Nota de Git: {e}")
-
-
-# ==========================================
-# EJECUCIÓN PRINCIPAL
-# ==========================================
-if __name__ == "__main__":
-    print("=" * 50)
-    print(
-        f" ESCANEANDO UNIVERSO IBEX/CONTINUO CON ATR ({len(activos)} VALORES)"
-    )
-    print("=" * 50 + "\n")
-
-    auditar_y_mostrar_estadisticas()
-
-    tickers_bloqueados = obtener_tickers_bloqueados()
-    if tickers_bloqueados:
-        print(
-            f"🔒 Tickers excluidos por estar activos o en cuarentena: {list(tickers_bloqueados)}\n"
-        )
-
-    candidatos_detectados = []
-    for idx, ticker in enumerate(activos, 1):
-        if ticker in tickers_bloqueados:
-            continue
-        print(f"[{idx}/{len(activos)}] Analizando {ticker}...", end="\r")
-        resultado = analizar_activo(ticker)
-        if resultado:
-            candidatos_detectados.append(resultado)
-
-    print("\n" + "=" * 50)
-    print(
-        f" Escaneo completado. Candidatos válidos: {len(candidatos_detectados)}"
-    )
-
-    if candidatos_detectados:
-        candidatos_detectados = sorted(
-            candidatos_detectados,
-            key=lambda x: x["ratio_volumen"],
-            reverse=True,
-        )
-
-        print(
-            "\n Generando comentarios variados con motor LLM dinámico...\n"
-        )
-        print("=" * 50)
-
-        for candidato in candidatos_detectados:
-            comentario = generar_comentario_ia_variado(candidato)
-            guardar_en_csv(candidato, comentario)
-
-            print(
-                f"\n{candidato['icono']} {candidato['empresa']} ({candidato['ticker']}) - {candidato['sector']}"
-            )
-            print(
-                f"    Entrada: {candidato['precio']} € | SL: {candidato['stop_loss']} € | TP: {candidato['take_profit']} € | R/R: 1:{candidato['ratio_rr']}"
-            )
-            print(f"   🤖 Comentario IA: {comentario}")
-            print("-" * 50)
-
-        print("\n💾 Nuevas alertas guardadas exitosamente en el historial.")
-    else:
-        print(
-            "💤 Ningún valor nuevo disponible (o todos los candidatos están en seguimiento)."
-        )
-
-    subir_a_github()
+if __name__=="__main__":main()
