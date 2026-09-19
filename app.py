@@ -16,7 +16,21 @@ st.set_page_config(
 )
 
 ARCHIVO_HISTORIAL = "historial_alertas.csv"
-TOTAL_ACTIVOS_UNIVERSO = 37
+ARCHIVO_UNIVERSO = "universo_activos.csv"
+
+def obtener_total_activos():
+    """Calcula dinámicamente el total de activos desde el CSV del universo."""
+    if os.path.exists(ARCHIVO_UNIVERSO):
+        for encoding in ["utf-8", "latin-1", "cp1252"]:
+            try:
+                df = pd.read_csv(ARCHIVO_UNIVERSO, encoding=encoding)
+                if not df.empty:
+                    return len(df)
+            except Exception:
+                continue
+    return 37  # Valor por defecto si no se encuentra el archivo
+
+TOTAL_ACTIVOS_UNIVERSO = obtener_total_activos()
 
 
 def render_html(content, **kwargs):
