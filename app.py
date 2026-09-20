@@ -4214,7 +4214,7 @@ with tab_planes:
                     st.error("Introduce un correo electrónico válido.")
 
     with col2:
-        st.subheader("Plan Premium (VIP)")
+        st.subheader("PROXIMAMENTE - Plan VIP")
         st.markdown("""
         * **Alertas exclusivas con Score > 80**.
         * Envío prioritario en tiempo real.
@@ -4233,7 +4233,7 @@ with tab_planes:
             </a>
         </div>
         """, unsafe_allow_html=True)
-        st.caption("Pago seguro gestionado mediante Stripe.")
+        st.caption(" ")
 
 
 # ============================================================
