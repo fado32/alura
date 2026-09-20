@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 import yfinance as yf
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 
 # ============================================================
@@ -31,7 +31,14 @@ def conectar_google_sheets(nombre_pestana):
         "https://www.googleapis.com/auth/drive"
     ]
     try:
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        # Carga limpia desde los secretos de Streamlit Cloud configurados
+        if "gcp_service_account" in st.secrets:
+            creds_dict = dict(st.secrets["gcp_service_account"])
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        else:
+            # Fallback por si se ejecuta en local y se dispone del fichero JSON
+            creds = Credentials.from_service_account_file("credentials.json", scopes=scope)
+            
         client = gspread.authorize(creds)
         sheet = client.open("Alura_DB").worksheet(nombre_pestana)
         return sheet
