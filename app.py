@@ -947,9 +947,6 @@ div[data-testid="stStatusWidget"] {
     margin-bottom:
         25px;
 
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
 }
 
 .hero-title {
@@ -988,20 +985,6 @@ div[data-testid="stStatusWidget"] {
     font-size:
         13px;
 
-}
-
-.update-badge {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    padding: 8px 14px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-secondary);
-    box-shadow: var(--shadow);
-    display: flex;
-    align-items: center;
-    gap: 6px;
 }
 
 
@@ -2782,7 +2765,7 @@ render_html(
 # ============================================================
 
 render_html(
-    f"""
+    """
 <div class="hero">
     <div>
         <h1 class="hero-title">
@@ -2791,10 +2774,6 @@ render_html(
         <div class="hero-subtitle">
             Señales cuantitativas, cartera y resultados en un solo lugar.
         </div>
-    </div>
-    <div class="update-badge">
-        <span>🔄 Última actualización:</span>
-        <strong style="color: var(--text);">{fecha_actualizacion_sistema}</strong>
     </div>
 </div>
 """,
@@ -4301,7 +4280,7 @@ with tab_planes:
 # ============================================================
 
 render_html(
-    """
+    f"""
 <div class="app-footer">
 
     <span>
@@ -4309,7 +4288,7 @@ render_html(
     </span>
 
     <span>
-        Simulación cuantitativa automatizada · Uso interno
+        🔄 Última actualización: <strong>{fecha_actualizacion_sistema}</strong>
     </span>
 
 </div>
