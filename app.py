@@ -76,6 +76,67 @@ def safe_float(value, default=None):
         return default
 
 
+def preparar_fecha(df):
+    """Normaliza las columnas de fecha del historial."""
+    if df is None:
+        return pd.DataFrame()
+    df = df.copy()
+    for col in ("Fecha", "Ultima_Actualizacion", "Fecha_Mercado_Actual", "Ultima_Ejecucion"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
+
+
+def formatear_numero(valor, decimales=2, sufijo="", signo=False):
+    """Formatea un número de forma segura para la interfaz."""
+    if valor is None or pd.isna(valor):
+        return "—"
+    try:
+        valor = float(valor)
+    except (TypeError, ValueError):
+        return "—"
+    prefijo = "+" if signo and valor > 0 else ("−" if signo and valor < 0 else "")
+    return f"{prefijo}{abs(valor):,.{decimales}f}{sufijo}"
+
+
+def calcular_pnl_posicion(precio_actual, precio_entrada, capital=300.0):
+    """Devuelve P&L monetario y porcentual de una posición."""
+    if precio_actual is None or precio_entrada is None or precio_entrada <= 0:
+        return None, None
+    porcentaje = (float(precio_actual) - float(precio_entrada)) / float(precio_entrada) * 100
+    beneficio = float(capital) * porcentaje / 100
+    return beneficio, porcentaje
+
+
+def calcular_metricas(df):
+    """Calcula métricas globales del historial."""
+    if df is None or df.empty:
+        return {"total_alertas": 0, "exitos": 0, "fallos": 0, "activas": 0, "win_rate": 0.0}
+    estados = df["Estado"].astype(str) if "Estado" in df.columns else pd.Series("", index=df.index)
+    activos = estados.str.contains("ACTIVA", na=False, regex=False)
+    exitos = estados.str.contains("OBJETIVO_CUMPLIDO", na=False, regex=False)
+    fallos = estados.str.contains("STOP_SALTADO", na=False, regex=False)
+    cerradas = int(exitos.sum() + fallos.sum())
+    win_rate = float(exitos.sum() / cerradas * 100) if cerradas else 0.0
+    return {
+        "total_alertas": int(len(df)),
+        "exitos": int(exitos.sum()),
+        "fallos": int(fallos.sum()),
+        "activas": int(activos.sum()),
+        "win_rate": win_rate,
+    }
+
+
+def formatear_tesis_ia(texto):
+    """Limpia y escapa el comentario de IA para HTML."""
+    if texto is None or pd.isna(texto):
+        return "Sin información disponible."
+    texto = str(texto).strip()
+    if not texto:
+        return "Sin información disponible."
+    return html.escape(texto).replace("\n", "<br>")
+
+
 def obtener_total_activos():
     """
     Calcula dinámicamente el total de activos desde el CSV
