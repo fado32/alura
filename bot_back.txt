@@ -1,249 +1,4128 @@
-# ALURA QUANT V4 (Optimizado para Universos Masivos / 1000+ Tickers)
-import csv, os, subprocess
+# ============================================================
+# ALURA QUANT V4.3
+# ============================================================
+#
+# ARQUITECTURA
+#
+# 1. Cada alerta guarda una TESIS ORIGINAL INMUTABLE.
+#
+# 2. Cada ejecución actualiza únicamente el ESTADO ACTUAL.
+#
+# 3. La IA compara:
+#
+#       TESIS ORIGINAL
+#             vs
+#       SITUACIÓN ACTUAL
+#
+# 4. Stop Loss y Take Profit originales no se modifican.
+#
+# 5. Estado operativo:
+#
+#       ACTIVA
+#       STOP_SALTADO
+#       OBJETIVO_CUMPLIDO
+#
+# 6. Estado_Estrategia:
+#
+#       TESIS_REFORZADA
+#       TESIS_ESTABLE
+#       TESIS_DEBILITADA
+#       TESIS_INVALIDADA
+#
+# 7. YAHOO / FECHAS
+#
+#    Nunca se utiliza:
+#
+#       hoy + 1 día
+#
+#    Nunca se utiliza una fecha futura como "end".
+#
+#    Tampoco se utiliza "start" para determinar la última
+#    sesión disponible.
+#
+#    Yahoo descarga un periodo amplio y el programa determina
+#    LOCALMENTE cuál es la última vela real disponible.
+#
+# 8. Un DataFrame vacío o un error de conexión de Yahoo
+#    NO significa que el ticker esté delisted.
+#
+# 9. AUDITORÍA
+#
+#    Se descarga histórico amplio y posteriormente se filtran
+#    localmente las velas posteriores a la entrada.
+#
+# ============================================================
+
+
+import os
+import subprocess
+import time
+
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
 import pandas as pd
 import yfinance as yf
+
 from openai import OpenAI
 
-TZ=ZoneInfo("Europe/Madrid")
-MODO_EJECUCION="AUTO"  # AUTO | 14 | 18
-ARCHIVO_HISTORIAL="historial_alertas.csv"
-ARCHIVO_UNIVERSO="universo_activos.csv"
-CAPITAL=100000.0
-RIESGO_POR_OPERACION=0.005
-ATR_MULTIPLICADOR=1.75
-RR_TARGET=2.5
-UMBRAL_SCORE_18=55
-UMBRAL_SCORE_14=50
-LIQUIDEZ_MIN_EUR=500000
-CUARENTENA_STOP_DIAS=15
-TAMANO_LOTE = 50  # Lotes de tickers para descarga masiva eficiente
-client=OpenAI(base_url="http://localhost:11434/v1",api_key="ollama")
-MODELO_LOCAL="llama3.2"
+
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
+TZ = ZoneInfo("Europe/Madrid")
+
+MODO_EJECUCION = "AUTO"
+# AUTO | 14 | 18
+
+ARCHIVO_HISTORIAL = "historial_alertas.csv"
+ARCHIVO_UNIVERSO = "universo_activos.csv"
+
+CAPITAL = 100000.0
+
+RIESGO_POR_OPERACION = 0.005
+
+ATR_MULTIPLICADOR = 1.75
+
+RR_TARGET = 2.5
+
+UMBRAL_SCORE_18 = 55
+UMBRAL_SCORE_14 = 50
+
+LIQUIDEZ_MIN_EUR = 500000
+
+CUARENTENA_STOP_DIAS = 15
+
+TAMANO_LOTE = 50
+
+# ------------------------------------------------------------
+# YAHOO
+# ------------------------------------------------------------
+
+MAX_REINTENTOS_YAHOO = 3
+
+ESPERA_REINTENTO_YAHOO = 2
+
+# Histórico utilizado para indicadores actuales.
+PERIODO_ACTUAL = "1y"
+
+# Histórico utilizado para auditoría.
+# Se utiliza un periodo amplio y después se filtra LOCALMENTE.
+PERIODO_AUDITORIA = "5y"
+
+
+# ============================================================
+# IA LOCAL
+# ============================================================
+
+client = OpenAI(
+    base_url="http://localhost:11434/v1",
+    api_key="ollama"
+)
+
+MODELO_LOCAL = "llama3.2"
+
+
+# ============================================================
+# UNIVERSO BASE
+# ============================================================
 
 MAESTRO_ACTIVOS_BASE = {
-    "TLGO.MC": ("Talgo", "Industrial", "🚆"),
-    "SAN.MC": ("Banco Santander", "Banca", "🏦"),
-    "BBVA.MC": ("BBVA", "Banca", "🏦"),
-    "ITX.MC": ("Inditex", "Consumo Cíclico", "👗"),
+
+    "TLGO.MC": (
+        "Talgo",
+        "Industrial",
+        "🚆"
+    ),
+
+    "SAN.MC": (
+        "Banco Santander",
+        "Banca",
+        "🏦"
+    ),
+
+    "BBVA.MC": (
+        "BBVA",
+        "Banca",
+        "🏦"
+    ),
+
+    "ITX.MC": (
+        "Inditex",
+        "Consumo Cíclico",
+        "👗"
+    ),
 }
 
+
 def cargar_universo():
-    universo=dict(MAESTRO_ACTIVOS_BASE)
-    if os.path.exists(ARCHIVO_UNIVERSO):
+
+    universo = dict(
+        MAESTRO_ACTIVOS_BASE
+    )
+
+    if os.path.exists(
+        ARCHIVO_UNIVERSO
+    ):
+
         try:
-            df=pd.read_csv(ARCHIVO_UNIVERSO)
-            for _,r in df.iterrows():
-                t=str(r.get("Ticker","")).strip()
-                if t: universo[t]=(str(r.get("Empresa",t)),str(r.get("Sector","General")),str(r.get("Icono","📈")))
-        except Exception as e: print(f"⚠️ Error cargando universo: {e}")
+
+            df = pd.read_csv(
+                ARCHIVO_UNIVERSO,
+                dtype=str,
+                keep_default_na=False
+            )
+
+            for _, r in df.iterrows():
+
+                ticker = str(
+                    r.get(
+                        "Ticker",
+                        ""
+                    )
+                ).strip()
+
+                if ticker:
+
+                    universo[ticker] = (
+
+                        str(
+                            r.get(
+                                "Empresa",
+                                ticker
+                            )
+                        ),
+
+                        str(
+                            r.get(
+                                "Sector",
+                                "General"
+                            )
+                        ),
+
+                        str(
+                            r.get(
+                                "Icono",
+                                "📈"
+                            )
+                        )
+                    )
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Error cargando universo: {e}"
+            )
+
     return universo
 
-MAESTRO_ACTIVOS=cargar_universo(); activos=list(MAESTRO_ACTIVOS)
 
-def ahora(): return datetime.now(TZ)
-def modo_actual(): return MODO_EJECUCION if MODO_EJECUCION in ("14","18") else ("14" if ahora().hour<16 else "18")
+MAESTRO_ACTIVOS = cargar_universo()
+
+activos = list(
+    MAESTRO_ACTIVOS.keys()
+)
+
+
+# ============================================================
+# CAMPOS DEL HISTORIAL
+# ============================================================
+
+CAMPOS_HISTORIAL = [
+
+    # --------------------------------------------------------
+    # IDENTIFICACIÓN
+    # --------------------------------------------------------
+
+    "Fecha",
+    "Ticker",
+    "Empresa",
+    "Sector",
+    "Icono",
+    "Modo",
+
+    # --------------------------------------------------------
+    # TESIS / SNAPSHOT ORIGINAL
+    # --------------------------------------------------------
+
+    "Precio_Alerta",
+
+    "Score_Entrada",
+    "RVOL_Entrada",
+    "RSI_Entrada",
+    "ROC20_Entrada",
+    "ATR_Entrada",
+
+    "EMA50_Entrada",
+    "EMA200_Entrada",
+
+    "Razones_Entrada",
+
+    "Soporte_Entrada",
+    "Resistencia_Entrada",
+
+    "Analisis_IA_Entrada",
+
+    # --------------------------------------------------------
+    # ESTRATEGIA ORIGINAL
+    # --------------------------------------------------------
+
+    "Stop_Loss",
+    "Take_Profit",
+
+    "Ratio_RR",
+
+    "Riesgo_Euros",
+    "Acciones",
+    "Nominal",
+
+    # --------------------------------------------------------
+    # ESTADO ACTUAL
+    # --------------------------------------------------------
+
+    "Precio_Actual",
+
+    "Score_Actual",
+    "RVOL_Actual",
+    "RSI_Actual",
+    "ROC20_Actual",
+    "ATR_Actual",
+
+    "EMA50_Actual",
+    "EMA200_Actual",
+
+    "Razones_Actuales",
+
+    "Soporte_Actual",
+    "Resistencia_Actual",
+
+    "Distancia_SL_Pct",
+    "Distancia_TP_Pct",
+
+    "P&L_Actual_Pct",
+
+    "Estado_Estrategia",
+
+    "Ultima_Actualizacion",
+
+    "Fecha_Mercado_Actual",
+
+    "Analisis_IA_Actual",
+
+    # --------------------------------------------------------
+    # ESTADO OPERATIVO
+    # --------------------------------------------------------
+
+    "Estado",
+
+    "Fecha_Salida",
+
+    "Resultado_R",
+
+    "MAE_R",
+
+    "MFE_R"
+]
+
+
+# ============================================================
+# TIPOS DE COLUMNAS
+# ============================================================
+
+CAMPOS_TEXTO = [
+
+    "Fecha",
+    "Ticker",
+    "Empresa",
+    "Sector",
+    "Icono",
+    "Modo",
+
+    "Razones_Entrada",
+
+    "Analisis_IA_Entrada",
+
+    "Razones_Actuales",
+
+    "Estado_Estrategia",
+
+    "Ultima_Actualizacion",
+
+    "Fecha_Mercado_Actual",
+
+    "Analisis_IA_Actual",
+
+    "Estado",
+
+    "Fecha_Salida"
+]
+
+
+CAMPOS_NUMERICOS = [
+
+    "Precio_Alerta",
+
+    "Score_Entrada",
+    "RVOL_Entrada",
+    "RSI_Entrada",
+    "ROC20_Entrada",
+    "ATR_Entrada",
+
+    "EMA50_Entrada",
+    "EMA200_Entrada",
+
+    "Soporte_Entrada",
+    "Resistencia_Entrada",
+
+    "Stop_Loss",
+    "Take_Profit",
+
+    "Ratio_RR",
+
+    "Riesgo_Euros",
+    "Acciones",
+    "Nominal",
+
+    "Precio_Actual",
+
+    "Score_Actual",
+    "RVOL_Actual",
+    "RSI_Actual",
+    "ROC20_Actual",
+    "ATR_Actual",
+
+    "EMA50_Actual",
+    "EMA200_Actual",
+
+    "Soporte_Actual",
+    "Resistencia_Actual",
+
+    "Distancia_SL_Pct",
+    "Distancia_TP_Pct",
+
+    "P&L_Actual_Pct",
+
+    "Resultado_R",
+    "MAE_R",
+    "MFE_R"
+]
+
+
+# ============================================================
+# UTILIDADES
+# ============================================================
+
+def ahora():
+
+    return datetime.now(TZ)
+
+
+def modo_actual():
+
+    if MODO_EJECUCION in (
+        "14",
+        "18"
+    ):
+
+        return MODO_EJECUCION
+
+    return (
+        "14"
+        if ahora().hour < 16
+        else "18"
+    )
+
+
+def limpiar_fecha_indice(datos):
+
+    """
+    Normaliza el índice temporal de Yahoo.
+
+    No intenta adivinar fechas futuras.
+    Únicamente limpia y ordena las fechas que Yahoo realmente
+    devolvió.
+    """
+
+    if datos is None or datos.empty:
+
+        return datos
+
+    datos = datos.copy()
+
+    try:
+
+        idx = pd.to_datetime(
+            datos.index,
+            errors="coerce"
+        )
+
+        datos.index = idx
+
+        datos = datos[
+            ~datos.index.isna()
+        ]
+
+        datos = datos.sort_index()
+
+    except Exception:
+
+        pass
+
+    return datos
+
 
 def norm(df):
-    if isinstance(df.columns,pd.MultiIndex): df.columns=df.columns.get_level_values(0)
-    return df
 
-def rsi(s,n=14):
-    z=s.diff(); g=z.clip(lower=0); l=-z.clip(upper=0); ag=g.ewm(alpha=1/n,adjust=False,min_periods=n).mean(); al=l.ewm(alpha=1/n,adjust=False,min_periods=n).mean(); rs=ag/al.replace(0,pd.NA); return 100-100/(1+rs)
+    """
+    Normaliza columnas procedentes de yfinance.
 
-def atr(d,n=14):
-    p=d.Close.shift(); tr=pd.concat([d.High-d.Low,(d.High-p).abs(),(d.Low-p).abs()],axis=1).max(axis=1); return tr.ewm(alpha=1/n,adjust=False,min_periods=n).mean()
+    Soporta tanto:
 
-def bloqueados():
-    if not os.path.exists(ARCHIVO_HISTORIAL):return set()
-    out=set(); hoy=ahora().date()
-    try:
-        for r in csv.DictReader(open(ARCHIVO_HISTORIAL,encoding="utf-8")):
-            try:f=datetime.strptime(r.get("Fecha","").split()[0],"%Y-%m-%d").date()
-            except:continue
-            if "ACTIVA" in r.get("Estado","") or ("STOP_SALTADO" in r.get("Estado","") and (hoy-f).days<CUARENTENA_STOP_DIAS):out.add(r.get("Ticker"))
-    except:pass
-    return out
+        Open / High / Low / Close / Volume
 
-def procesar_dataframe_activo(t, d):
-    """Aplica la lógica cuantitativa a un DataFrame diario ya descargado"""
-    if len(d)<220: return None
-    d=d.copy()
-    d["E20"]=d.Close.ewm(span=20,adjust=False).mean()
-    d["E50"]=d.Close.ewm(span=50,adjust=False).mean()
-    d["E200"]=d.Close.ewm(span=200,adjust=False).mean()
-    d["RSI"]=rsi(d.Close)
-    d["ATR"]=atr(d)
-    d["VM20"]=d.Volume.rolling(20).mean()
-    d["TO20"]=(d.Close*d.Volume).rolling(20).mean()
-    d["ROC20"]=d.Close.pct_change(20)*100
-    d["H20"]=d.High.rolling(20).max().shift(1)
-    d["CLV"]=((d.Close-d.Low)/(d.High-d.Low).replace(0,pd.NA)).fillna(0)
-    
-    x=d.iloc[-1]
-    req=["Close","E50","E200","RSI","ATR","VM20","TO20","ROC20","H20"]
-    if any(pd.isna(x[k]) for k in req): return None
-    
-    price=float(x.Close); e50=float(x.E50); e200=float(x.E200); R=float(x.RSI); A=float(x.ATR)
-    rv=float(x.Volume/x.VM20) if float(x.VM20)>0 else 0; to=float(x.TO20); roc=float(x.ROC20)
-    br=price>float(x.H20); clv=float(x.CLV)
-    
-    if to<LIQUIDEZ_MIN_EUR: return None
-    
-    score=0; why=[]
-    tests=[
-        (price>e50, 15, "Precio > EMA50"),
-        (e50>e200, 20, "EMA50 > EMA200"),
-        (55<=R<=75, 15, "RSI 55-75"),
-        (roc>5, 10, "ROC20 > 5%"),
-        (rv>=1.5, 15, "RVOL >= 1.5x"),
-        (rv>=1.2 and rv<1.5, 8, "RVOL >= 1.2x"),
-        (clv>=.70, 5, "Cierre cerca de máximos"),
-        (br, 15, "Ruptura máximo 20 sesiones")
+    como MultiIndex.
+    """
+
+    if df is None:
+
+        return df
+
+    df = df.copy()
+
+    if isinstance(
+        df.columns,
+        pd.MultiIndex
+    ):
+
+        posibles = {
+            "Open",
+            "High",
+            "Low",
+            "Close",
+            "Adj Close",
+            "Volume"
+        }
+
+        nivel_encontrado = None
+
+        for nivel in range(
+            df.columns.nlevels
+        ):
+
+            valores = set(
+
+                str(x)
+
+                for x in
+                df.columns.get_level_values(
+                    nivel
+                )
+            )
+
+            if (
+                len(
+                    posibles.intersection(
+                        valores
+                    )
+                )
+                >= 3
+            ):
+
+                nivel_encontrado = nivel
+
+                break
+
+        if nivel_encontrado is not None:
+
+            df.columns = (
+                df.columns
+                .get_level_values(
+                    nivel_encontrado
+                )
+            )
+
+        else:
+
+            df.columns = (
+                df.columns
+                .get_level_values(0)
+            )
+
+    return limpiar_fecha_indice(
+        df
+    )
+
+
+# ============================================================
+# VALIDACIÓN DE DATOS
+# ============================================================
+
+def validar_datos_mercado(
+    datos
+):
+
+    if datos is None:
+
+        return False, "Yahoo devolvió None"
+
+    if datos.empty:
+
+        return False, (
+            "Yahoo devolvió un DataFrame vacío"
+        )
+
+    datos = norm(
+        datos
+    )
+
+    columnas_necesarias = [
+
+        "Close",
+        "High",
+        "Low",
+        "Volume"
     ]
-    
-    for ok,pts,txt in tests:
-        if ok: score+=pts; why.append(txt)
-        
-    modo = modo_actual()
-    if score<(UMBRAL_SCORE_14 if modo=="14" else UMBRAL_SCORE_18) or rv<1.2 or not(price>e50 and e50>e200): return None
-    
-    support=float(d.Low.iloc[-16:-1].min()); resistance=float(d.High.iloc[-61:-1].max())
-    stop=min(price-ATR_MULTIPLICADOR*A, support*.99); risk=price-stop
-    if risk<=0 or risk>price*.20: return None
-    
-    shares=int((CAPITAL*RIESGO_POR_OPERACION)/risk)
-    if shares<1: return None
-    
-    info_activo = MAESTRO_ACTIVOS.get(t, (t, "General", "📈"))
-    
+
+    faltan = [
+
+        c
+
+        for c in columnas_necesarias
+
+        if c not in datos.columns
+    ]
+
+    if faltan:
+
+        return False, (
+            "Faltan columnas: "
+            +
+            ", ".join(faltan)
+        )
+
+    datos = datos.dropna(
+        subset=columnas_necesarias
+    )
+
+    if datos.empty:
+
+        return False, (
+            "No existen velas válidas "
+            "después de eliminar NaN"
+        )
+
+    return True, datos
+
+
+# ============================================================
+# DESCARGA ROBUSTA YAHOO
+# ============================================================
+
+def descargar_historico_ticker(
+    ticker,
+    period=PERIODO_ACTUAL
+):
+
+    """
+    DESCARGA PRINCIPAL.
+
+    IMPORTANTE:
+
+    NO se utilizan:
+
+        start=
+        end=
+
+    Por tanto no existe ninguna posibilidad de pedir:
+
+        2026-09-20 -> 2026-09-20
+
+    o:
+
+        2026-09-20 -> 2026-09-19
+
+    Yahoo devuelve el histórico disponible dentro del periodo
+    solicitado y nosotros seleccionamos la última vela real.
+
+    Estados:
+
+        OK
+        SIN_DATOS
+        ERROR_YAHOO
+    """
+
+    ultimo_error = None
+
+    for intento in range(
+        1,
+        MAX_REINTENTOS_YAHOO + 1
+    ):
+
+        try:
+
+            datos = yf.download(
+
+                ticker,
+
+                period=period,
+
+                interval="1d",
+
+                auto_adjust=True,
+
+                progress=False,
+
+                threads=False,
+
+                group_by="column",
+
+                timeout=20
+            )
+
+            valido, resultado = (
+                validar_datos_mercado(
+                    datos
+                )
+            )
+
+            if valido:
+
+                return (
+                    resultado,
+                    "OK"
+                )
+
+            ultimo_error = resultado
+
+        except Exception as e:
+
+            ultimo_error = str(e)
+
+        if intento < MAX_REINTENTOS_YAHOO:
+
+            time.sleep(
+                ESPERA_REINTENTO_YAHOO
+            )
+
+    if ultimo_error:
+
+        if (
+            "empty"
+            in ultimo_error.lower()
+            or
+            "no price data"
+            in ultimo_error.lower()
+        ):
+
+            return (
+                None,
+                "SIN_DATOS: "
+                + ultimo_error
+            )
+
+        return (
+            None,
+            "ERROR_YAHOO: "
+            + ultimo_error
+        )
+
+    return (
+        None,
+        "ERROR_YAHOO: error desconocido"
+    )
+
+
+# ============================================================
+# FILTRADO LOCAL POR FECHA
+# ============================================================
+
+def filtrar_desde_fecha(
+    datos,
+    fecha_inicio
+):
+
+    """
+    Filtra LOCALMENTE un histórico ya descargado.
+
+    No hace ninguna petición adicional a Yahoo.
+
+    Esto elimina completamente el problema de:
+
+        start date cannot be after end date
+    """
+
+    if datos is None or datos.empty:
+
+        return datos
+
+    datos = norm(
+        datos
+    )
+
+    try:
+
+        fecha_inicio = pd.Timestamp(
+            fecha_inicio
+        ).normalize()
+
+    except Exception:
+
+        return datos.iloc[0:0]
+
+    indice = pd.to_datetime(
+        datos.index,
+        errors="coerce"
+    )
+
+    mascara = (
+        indice.normalize()
+        >=
+        fecha_inicio
+    )
+
+    resultado = datos.loc[
+        mascara
+    ].copy()
+
+    return resultado
+
+
+def ultima_fecha_datos(
+    datos
+):
+
+    if datos is None or datos.empty:
+
+        return None
+
+    try:
+
+        fecha = datos.index[-1]
+
+        return pd.Timestamp(
+            fecha
+        )
+
+    except Exception:
+
+        return None
+
+
+def ultima_sesion_real(
+    datos
+):
+
+    """
+    Devuelve exclusivamente la última fecha que Yahoo
+    realmente devolvió.
+
+    Nunca calcula:
+
+        hoy + 1
+        hoy
+        mañana
+        próximo lunes
+
+    si esas fechas no existen en el DataFrame.
+    """
+
+    if datos is None or datos.empty:
+
+        return None
+
+    datos = norm(
+        datos
+    )
+
+    datos = datos.dropna(
+        subset=[
+            "Close",
+            "High",
+            "Low",
+            "Volume"
+        ]
+    )
+
+    if datos.empty:
+
+        return None
+
+    return datos.index[-1]
+
+
+# ============================================================
+# DESCARGA POR LOTES
+# ============================================================
+
+def descargar_lote(
+    tickers,
+    period=PERIODO_ACTUAL
+):
+
+    """
+    Descarga un lote sin start/end.
+
+    Si Yahoo falla con algunos tickers, NO se considera
+    que estén delisted.
+    """
+
+    if not tickers:
+
+        return {}
+
+    resultado = {}
+
+    ultimo_error = None
+
+    for intento in range(
+        1,
+        MAX_REINTENTOS_YAHOO + 1
+    ):
+
+        try:
+
+            datos_lote = yf.download(
+
+                tickers,
+
+                period=period,
+
+                interval="1d",
+
+                auto_adjust=True,
+
+                group_by="ticker",
+
+                progress=False,
+
+                threads=True,
+
+                timeout=30
+            )
+
+            if (
+                datos_lote is None
+                or
+                datos_lote.empty
+            ):
+
+                ultimo_error = (
+                    "Yahoo devolvió "
+                    "el lote vacío"
+                )
+
+            else:
+
+                # ------------------------------------------------
+                # UN SOLO TICKER
+                # ------------------------------------------------
+
+                if len(tickers) == 1:
+
+                    ticker = tickers[0]
+
+                    datos = norm(
+                        datos_lote
+                    )
+
+                    valido, datos_validos = (
+                        validar_datos_mercado(
+                            datos
+                        )
+                    )
+
+                    if valido:
+
+                        resultado[ticker] = (
+                            datos_validos,
+                            "OK"
+                        )
+
+                    else:
+
+                        resultado[ticker] = (
+                            None,
+                            datos_validos
+                        )
+
+                    return resultado
+
+                # ------------------------------------------------
+                # VARIOS TICKERS
+                # ------------------------------------------------
+
+                for ticker in tickers:
+
+                    try:
+
+                        datos = (
+                            datos_lote[
+                                ticker
+                            ]
+                        )
+
+                        datos = norm(
+                            datos
+                        )
+
+                        valido, datos_validos = (
+                            validar_datos_mercado(
+                                datos
+                            )
+                        )
+
+                        if valido:
+
+                            resultado[ticker] = (
+                                datos_validos,
+                                "OK"
+                            )
+
+                        else:
+
+                            resultado[ticker] = (
+                                None,
+                                datos_validos
+                            )
+
+                    except Exception as e:
+
+                        resultado[ticker] = (
+
+                            None,
+
+                            "ERROR_EXTRACCION: "
+                            + str(e)
+                        )
+
+                return resultado
+
+        except Exception as e:
+
+            ultimo_error = str(e)
+
+        if intento < MAX_REINTENTOS_YAHOO:
+
+            time.sleep(
+                ESPERA_REINTENTO_YAHOO
+            )
+
+    # --------------------------------------------------------
+    # SI TODO EL LOTE FALLA
+    # --------------------------------------------------------
+
+    for ticker in tickers:
+
+        resultado[ticker] = (
+
+            None,
+
+            "ERROR_YAHOO: "
+            +
+            str(
+                ultimo_error
+                or
+                "error desconocido"
+            )
+        )
+
+    return resultado
+
+
+# ============================================================
+# INDICADORES
+# ============================================================
+
+def rsi(
+    s,
+    n=14
+):
+
+    z = s.diff()
+
+    g = z.clip(
+        lower=0
+    )
+
+    l = -z.clip(
+        upper=0
+    )
+
+    ag = g.ewm(
+        alpha=1 / n,
+        adjust=False,
+        min_periods=n
+    ).mean()
+
+    al = l.ewm(
+        alpha=1 / n,
+        adjust=False,
+        min_periods=n
+    ).mean()
+
+    rs = (
+        ag
+        /
+        al.replace(
+            0,
+            pd.NA
+        )
+    )
+
+    return (
+        100
+        -
+        100 / (1 + rs)
+    )
+
+
+def atr(
+    d,
+    n=14
+):
+
+    p = d.Close.shift()
+
+    tr = pd.concat(
+        [
+            d.High - d.Low,
+            (d.High - p).abs(),
+            (d.Low - p).abs()
+        ],
+        axis=1
+    ).max(axis=1)
+
+    return tr.ewm(
+        alpha=1 / n,
+        adjust=False,
+        min_periods=n
+    ).mean()
+
+
+# ============================================================
+# INDICADORES COMPLETOS
+# ============================================================
+
+def preparar_indicadores(
+    d
+):
+
+    d = d.copy()
+
+    d["E20"] = (
+        d.Close
+        .ewm(
+            span=20,
+            adjust=False
+        )
+        .mean()
+    )
+
+    d["E50"] = (
+        d.Close
+        .ewm(
+            span=50,
+            adjust=False
+        )
+        .mean()
+    )
+
+    d["E200"] = (
+        d.Close
+        .ewm(
+            span=200,
+            adjust=False
+        )
+        .mean()
+    )
+
+    d["RSI"] = rsi(
+        d.Close
+    )
+
+    d["ATR"] = atr(
+        d
+    )
+
+    d["VM20"] = (
+        d.Volume
+        .rolling(20)
+        .mean()
+    )
+
+    d["TO20"] = (
+        d.Close
+        *
+        d.Volume
+    ).rolling(20).mean()
+
+    d["ROC20"] = (
+        d.Close
+        .pct_change(20)
+        * 100
+    )
+
+    d["H20"] = (
+        d.High
+        .rolling(20)
+        .max()
+        .shift(1)
+    )
+
+    d["CLV"] = (
+
+        (
+            d.Close
+            -
+            d.Low
+        )
+
+        /
+
+        (
+            d.High
+            -
+            d.Low
+        ).replace(
+            0,
+            pd.NA
+        )
+
+    ).fillna(0)
+
+    return d
+
+
+# ============================================================
+# ESTADO ACTUAL
+# ============================================================
+
+def obtener_estado_actual(
+    t,
+    d
+):
+
+    if d is None:
+
+        return None
+
+    d = norm(
+        d
+    )
+
+    if len(d) < 220:
+
+        return None
+
+    d = preparar_indicadores(
+        d
+    )
+
+    x = d.iloc[-1]
+
+    requeridos = [
+
+        "Close",
+        "E50",
+        "E200",
+        "RSI",
+        "ATR",
+        "VM20",
+        "TO20",
+        "ROC20",
+        "H20"
+    ]
+
+    if any(
+        pd.isna(
+            x[k]
+        )
+        for k in requeridos
+    ):
+
+        return None
+
+    price = float(
+        x.Close
+    )
+
+    e50 = float(
+        x.E50
+    )
+
+    e200 = float(
+        x.E200
+    )
+
+    rsi_actual = float(
+        x.RSI
+    )
+
+    atr_actual = float(
+        x.ATR
+    )
+
+    rvol = (
+
+        float(
+            x.Volume
+            /
+            x.VM20
+        )
+
+        if float(
+            x.VM20
+        ) > 0
+
+        else 0
+    )
+
+    liquidez = float(
+        x.TO20
+    )
+
+    roc20 = float(
+        x.ROC20
+    )
+
+    ruptura = (
+
+        price
+        >
+        float(
+            x.H20
+        )
+    )
+
+    clv = float(
+        x.CLV
+    )
+
+    # --------------------------------------------------------
+    # SCORE
+    # --------------------------------------------------------
+
+    score = 0
+
+    razones = []
+
+    tests = [
+
+        (
+            price > e50,
+            15,
+            "Precio > EMA50"
+        ),
+
+        (
+            e50 > e200,
+            20,
+            "EMA50 > EMA200"
+        ),
+
+        (
+            55 <= rsi_actual <= 75,
+            15,
+            "RSI 55-75"
+        ),
+
+        (
+            roc20 > 5,
+            10,
+            "ROC20 > 5%"
+        ),
+
+        (
+            rvol >= 1.5,
+            15,
+            "RVOL >= 1.5x"
+        ),
+
+        (
+            1.2 <= rvol < 1.5,
+            8,
+            "RVOL >= 1.2x"
+        ),
+
+        (
+            clv >= .70,
+            5,
+            "Cierre cerca de máximos"
+        ),
+
+        (
+            ruptura,
+            15,
+            "Ruptura máximo 20 sesiones"
+        )
+    ]
+
+    for condicion, puntos, texto in tests:
+
+        if condicion:
+
+            score += puntos
+
+            razones.append(
+                texto
+            )
+
+    info = MAESTRO_ACTIVOS.get(
+        t,
+        (
+            t,
+            "General",
+            "📈"
+        )
+    )
+
+    fecha_datos = (
+        ultima_sesion_real(
+            d
+        )
+    )
+
     return {
-        "ticker":t,
-        "empresa":info_activo[0],
-        "sector":info_activo[1],
-        "icono":info_activo[2],
-        "modo":modo,
-        "precio":round(price,2),
-        "stop":round(stop,2),
-        "tp":round(price+RR_TARGET*risk,2),
-        "acciones":shares,
-        "nominal":round(shares*price,2),
-        "riesgo":round(shares*risk,2),
-        "score":score,
-        "rvol":round(rv,2),
-        "rsi":round(R,2),
-        "roc20":round(roc,2),
-        "atr":round(A,2),
-        "regimen":"N/A",
-        "razones":"; ".join(why),
-        "soporte":round(support,2),
-        "resistencia":round(resistance,2)
+
+        "ticker":
+            t,
+
+        "empresa":
+            info[0],
+
+        "sector":
+            info[1],
+
+        "icono":
+            info[2],
+
+        "precio":
+            round(
+                price,
+                2
+            ),
+
+        "score":
+            int(score),
+
+        "rvol":
+            round(
+                rvol,
+                2
+            ),
+
+        "rsi":
+            round(
+                rsi_actual,
+                2
+            ),
+
+        "roc20":
+            round(
+                roc20,
+                2
+            ),
+
+        "atr":
+            round(
+                atr_actual,
+                2
+            ),
+
+        "e50":
+            round(
+                e50,
+                2
+            ),
+
+        "e200":
+            round(
+                e200,
+                2
+            ),
+
+        "razones":
+            "; ".join(
+                razones
+            ),
+
+        "soporte":
+            round(
+                float(
+                    d.Low.iloc[-16:-1].min()
+                ),
+                2
+            ),
+
+        "resistencia":
+            round(
+                float(
+                    d.High.iloc[-61:-1].max()
+                ),
+                2
+            ),
+
+        "liquidez":
+            round(
+                liquidez,
+                2
+            ),
+
+        "fecha_datos":
+            fecha_datos
     }
 
-def comentario(c):
+
+# ============================================================
+# PROCESAR NUEVA OPORTUNIDAD
+# ============================================================
+
+def procesar_dataframe_activo(
+    t,
+    d
+):
+
+    estado = obtener_estado_actual(
+        t,
+        d
+    )
+
+    if estado is None:
+
+        return None
+
+    modo = modo_actual()
+
+    score = estado["score"]
+
+    rvol = estado["rvol"]
+
+    precio = estado["precio"]
+
+    e50 = estado["e50"]
+
+    e200 = estado["e200"]
+
+    liquidez = estado["liquidez"]
+
+    # --------------------------------------------------------
+    # FILTRO LIQUIDEZ
+    # --------------------------------------------------------
+
+    if liquidez < LIQUIDEZ_MIN_EUR:
+
+        return None
+
+    # --------------------------------------------------------
+    # UMBRAL
+    # --------------------------------------------------------
+
+    umbral = (
+
+        UMBRAL_SCORE_14
+
+        if modo == "14"
+
+        else UMBRAL_SCORE_18
+    )
+
+    if score < umbral:
+
+        return None
+
+    # --------------------------------------------------------
+    # VOLUMEN
+    # --------------------------------------------------------
+
+    if rvol < 1.2:
+
+        return None
+
+    # --------------------------------------------------------
+    # TENDENCIA
+    # --------------------------------------------------------
+
+    if not (
+        precio > e50
+        and
+        e50 > e200
+    ):
+
+        return None
+
+    # --------------------------------------------------------
+    # STOP
+    # --------------------------------------------------------
+
+    soporte = estado["soporte"]
+
+    resistencia = estado["resistencia"]
+
+    atr_actual = estado["atr"]
+
+    stop = min(
+
+        precio
+        -
+        ATR_MULTIPLICADOR
+        *
+        atr_actual,
+
+        soporte * .99
+    )
+
+    riesgo_unitario = (
+
+        precio
+        -
+        stop
+    )
+
+    if riesgo_unitario <= 0:
+
+        return None
+
+    if riesgo_unitario > precio * .20:
+
+        return None
+
+    # --------------------------------------------------------
+    # TAMAÑO
+    # --------------------------------------------------------
+
+    acciones = int(
+
+        (
+            CAPITAL
+            *
+            RIESGO_POR_OPERACION
+        )
+
+        /
+
+        riesgo_unitario
+    )
+
+    if acciones < 1:
+
+        return None
+
+    info = MAESTRO_ACTIVOS.get(
+        t,
+        (
+            t,
+            "General",
+            "📈"
+        )
+    )
+
+    take_profit = (
+
+        precio
+        +
+        RR_TARGET
+        *
+        riesgo_unitario
+    )
+
+    return {
+
+        "ticker":
+            t,
+
+        "empresa":
+            info[0],
+
+        "sector":
+            info[1],
+
+        "icono":
+            info[2],
+
+        "modo":
+            modo,
+
+        # ----------------------------------------------------
+        # SNAPSHOT ORIGINAL
+        # ----------------------------------------------------
+
+        "precio":
+            precio,
+
+        "score":
+            estado["score"],
+
+        "rvol":
+            estado["rvol"],
+
+        "rsi":
+            estado["rsi"],
+
+        "roc20":
+            estado["roc20"],
+
+        "atr":
+            estado["atr"],
+
+        "e50":
+            estado["e50"],
+
+        "e200":
+            estado["e200"],
+
+        "razones":
+            estado["razones"],
+
+        "soporte":
+            soporte,
+
+        "resistencia":
+            resistencia,
+
+        # ----------------------------------------------------
+        # ESTRATEGIA
+        # ----------------------------------------------------
+
+        "stop":
+            round(
+                stop,
+                2
+            ),
+
+        "tp":
+            round(
+                take_profit,
+                2
+            ),
+
+        "acciones":
+            acciones,
+
+        "nominal":
+            round(
+                acciones * precio,
+                2
+            ),
+
+        "riesgo":
+            round(
+                acciones * riesgo_unitario,
+                2
+            ),
+
+        "fecha_datos":
+            estado["fecha_datos"]
+    }
+
+
+# ============================================================
+# IA - NUEVA ENTRADA
+# ============================================================
+
+def comentario_entrada(
+    c
+):
+
     try:
-        system_prompt = (
-            "Eres un analista cuantitativo senior de una mesa de operaciones. "
-            "Escribe un breve comentario de mercado directo, fluido y natural (máximo 2 o 3 frases), "
-            "como si le explicaras la oportunidad a un colega inversor. "
-            "PROHIBIDO usar títulos robóticos como 'Análisis técnico de...', "
-            "PROHIBIDO incluir listas de indicadores, viñetas o asteriscos de estructuración. "
-            "Habla de forma fluida integrando el volumen, la tendencia y el momento de mercado."
-        )
-        user_prompt = (
-            f"Activo: {c['empresa']} ({c['ticker']}). Precio actual: {c['precio']}€. "
-            f"Score cuantitativo: {c['score']}/100. RVOL: {c['rvol']}x. RSI: {c['rsi']}. "
-            f"Señales detectadas: {c['razones']}."
-        )
-        r = client.chat.completions.create(
+
+        system_prompt = """
+Eres el analista cuantitativo senior de Alura Quant.
+
+Se acaba de detectar una nueva oportunidad mediante
+una estrategia sistemática de tendencia, momentum y volumen.
+
+Explica en 2 o 3 frases por qué la acción ha sido
+incluida y cuál es la tesis cuantitativa.
+
+Integra tendencia, momentum y volumen.
+
+No uses listas.
+No uses títulos.
+No uses lenguaje robótico.
+No hagas predicciones categóricas.
+"""
+
+        user_prompt = f"""
+
+Activo:
+{c['empresa']} ({c['ticker']})
+
+Fecha del último dato de mercado:
+{c['fecha_datos']}
+
+Precio:
+{c['precio']}€
+
+Score:
+{c['score']}/100
+
+RVOL:
+{c['rvol']}x
+
+RSI:
+{c['rsi']}
+
+ROC20:
+{c['roc20']}%
+
+ATR:
+{c['atr']}€
+
+EMA50:
+{c['e50']}€
+
+EMA200:
+{c['e200']}€
+
+Razones:
+{c['razones']}
+
+Stop Loss:
+{c['stop']}€
+
+Take Profit:
+{c['tp']}€
+
+R:R:
+{RR_TARGET}
+"""
+
+        respuesta = client.chat.completions.create(
+
             model=MODELO_LOCAL,
+
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+
+                {
+                    "role":
+                        "system",
+
+                    "content":
+                        system_prompt
+                },
+
+                {
+                    "role":
+                        "user",
+
+                    "content":
+                        user_prompt
+                }
             ],
-            temperature=0.7  # Un poco más de temperatura para que suene más natural y humano
+
+            temperature=0.7
         )
-        return r.choices[0].message.content.strip()
+
+        return (
+            respuesta
+            .choices[0]
+            .message
+            .content
+            .strip()
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Error IA entrada: {e}"
+        )
+
+        return (
+
+            f"Entrada basada en una estructura "
+            f"cuantitativa favorable, con score "
+            f"{c['score']}/100 y RVOL de "
+            f"{c['rvol']}x."
+        )
+
+
+# ============================================================
+# EVALUACIÓN DE EVOLUCIÓN
+# ============================================================
+
+def evaluar_evolucion_estrategia(
+    original,
+    actual
+):
+
+    cambios = []
+
+    # --------------------------------------------------------
+    # SCORE
+    # --------------------------------------------------------
+
+    delta_score = (
+
+        float(actual["score"])
+        -
+        float(original["score"])
+    )
+
+    if delta_score >= 10:
+
+        cambios.append(
+            "score claramente reforzado"
+        )
+
+    elif delta_score <= -10:
+
+        cambios.append(
+            "score claramente deteriorado"
+        )
+
+    else:
+
+        cambios.append(
+            "score relativamente estable"
+        )
+
+    # --------------------------------------------------------
+    # TENDENCIA
+    # --------------------------------------------------------
+
+    tendencia_actual = (
+
+        float(actual["precio"])
+        >
+        float(actual["e50"])
+
+        and
+
+        float(actual["e50"])
+        >
+        float(actual["e200"])
+    )
+
+    if tendencia_actual:
+
+        cambios.append(
+            "estructura de tendencia preservada"
+        )
+
+    else:
+
+        cambios.append(
+            "estructura de tendencia deteriorada"
+        )
+
+    # --------------------------------------------------------
+    # RVOL
+    # --------------------------------------------------------
+
+    rvol_original = float(
+        original["rvol"]
+    )
+
+    rvol_actual = float(
+        actual["rvol"]
+    )
+
+    if rvol_actual >= rvol_original * 1.10:
+
+        cambios.append(
+            "confirmación por volumen mejorada"
+        )
+
+    elif rvol_actual <= rvol_original * .80:
+
+        cambios.append(
+            "confirmación por volumen debilitada"
+        )
+
+    else:
+
+        cambios.append(
+            "volumen relativamente estable"
+        )
+
+    # --------------------------------------------------------
+    # ROC
+    # --------------------------------------------------------
+
+    roc_original = float(
+        original["roc20"]
+    )
+
+    roc_actual = float(
+        actual["roc20"]
+    )
+
+    if roc_actual >= roc_original + 2:
+
+        cambios.append(
+            "momentum mejorado"
+        )
+
+    elif roc_actual <= roc_original - 2:
+
+        cambios.append(
+            "momentum debilitado"
+        )
+
+    else:
+
+        cambios.append(
+            "momentum estable"
+        )
+
+    # --------------------------------------------------------
+    # RSI
+    # --------------------------------------------------------
+
+    rsi_actual = float(
+        actual["rsi"]
+    )
+
+    if rsi_actual > 75:
+
+        cambios.append(
+            "RSI actualmente elevado"
+        )
+
+    elif rsi_actual < 50:
+
+        cambios.append(
+            "RSI por debajo de la zona de fortaleza"
+        )
+
+    else:
+
+        cambios.append(
+            "RSI compatible con la tesis"
+        )
+
+    return "; ".join(
+        cambios
+    )
+
+
+# ============================================================
+# ESTADO DE LA TESIS
+# ============================================================
+
+def estado_estrategia(
+    original,
+    actual
+):
+
+    fuertes = 0
+
+    debiles = 0
+
+    # --------------------------------------------------------
+    # TENDENCIA
+    # --------------------------------------------------------
+
+    precio = float(
+        actual["precio"]
+    )
+
+    e50 = float(
+        actual["e50"]
+    )
+
+    e200 = float(
+        actual["e200"]
+    )
+
+    if (
+        precio > e50
+        and
+        e50 > e200
+    ):
+
+        fuertes += 1
+
+    else:
+
+        debiles += 1
+
+    # --------------------------------------------------------
+    # SCORE
+    # --------------------------------------------------------
+
+    score_original = float(
+        original["score"]
+    )
+
+    score_actual = float(
+        actual["score"]
+    )
+
+    if score_actual >= score_original + 10:
+
+        fuertes += 1
+
+    elif score_actual <= score_original - 10:
+
+        debiles += 1
+
+    # --------------------------------------------------------
+    # VOLUMEN
+    # --------------------------------------------------------
+
+    rvol_original = float(
+        original["rvol"]
+    )
+
+    rvol_actual = float(
+        actual["rvol"]
+    )
+
+    if rvol_actual >= rvol_original * 1.10:
+
+        fuertes += 1
+
+    elif rvol_actual <= rvol_original * .80:
+
+        debiles += 1
+
+    # --------------------------------------------------------
+    # MOMENTUM
+    # --------------------------------------------------------
+
+    roc_original = float(
+        original["roc20"]
+    )
+
+    roc_actual = float(
+        actual["roc20"]
+    )
+
+    if roc_actual >= roc_original + 2:
+
+        fuertes += 1
+
+    elif roc_actual <= roc_original - 2:
+
+        debiles += 1
+
+    # --------------------------------------------------------
+    # RSI
+    # --------------------------------------------------------
+
+    rsi_actual = float(
+        actual["rsi"]
+    )
+
+    if 50 <= rsi_actual <= 75:
+
+        fuertes += 1
+
+    elif rsi_actual < 45:
+
+        debiles += 1
+
+    # --------------------------------------------------------
+    # RESULTADO
+    # --------------------------------------------------------
+
+    if debiles >= 3:
+
+        return "TESIS_INVALIDADA"
+
+    if debiles >= 2:
+
+        return "TESIS_DEBILITADA"
+
+    if fuertes >= 3:
+
+        return "TESIS_REFORZADA"
+
+    return "TESIS_ESTABLE"
+
+
+# ============================================================
+# CREAR COLUMNAS / NORMALIZAR HISTÓRICO
+# ============================================================
+
+def preparar_historial():
+
+    if not os.path.exists(
+        ARCHIVO_HISTORIAL
+    ):
+
+        return
+
+    try:
+
+        df = pd.read_csv(
+            ARCHIVO_HISTORIAL,
+            dtype=str,
+            keep_default_na=False
+        )
+
+        columnas_originales = set(
+            df.columns
+        )
+
+        # ----------------------------------------------------
+        # CREAR CAMPOS NUEVOS
+        # ----------------------------------------------------
+
+        for col in CAMPOS_HISTORIAL:
+
+            if col not in df.columns:
+
+                df[col] = ""
+
+        # ----------------------------------------------------
+        # MIGRACIÓN HISTÓRICO ANTIGUO
+        #
+        # IMPORTANTE:
+        #
+        # Solo rellenamos campos de entrada si están vacíos.
+        #
+        # Nunca copiamos Score_Actual -> Score_Entrada.
+        #
+        # Así evitamos contaminar la tesis original.
+        # ----------------------------------------------------
+
+        MAPEO_ANTIGUO = {
+
+            "Score":
+                "Score_Entrada",
+
+            "RVOL":
+                "RVOL_Entrada",
+
+            "RSI":
+                "RSI_Entrada",
+
+            "ROC20":
+                "ROC20_Entrada",
+
+            "ATR":
+                "ATR_Entrada",
+
+            "EMA50":
+                "EMA50_Entrada",
+
+            "EMA200":
+                "EMA200_Entrada",
+
+            "Razones":
+                "Razones_Entrada",
+
+            "Analisis_IA":
+                "Analisis_IA_Entrada"
+        }
+
+        for antiguo, nuevo in MAPEO_ANTIGUO.items():
+
+            if antiguo in columnas_originales:
+
+                mask = (
+
+                    df[nuevo]
+                    .astype(str)
+                    .str.strip()
+                    == ""
+                )
+
+                df.loc[
+                    mask,
+                    nuevo
+                ] = df.loc[
+                    mask,
+                    antiguo
+                ]
+
+        # ----------------------------------------------------
+        # PRECIO ALERTA
+        # ----------------------------------------------------
+
+        if (
+            "Precio_Alerta"
+            not in columnas_originales
+        ):
+
+            if (
+                "Precio_Entrada"
+                in columnas_originales
+            ):
+
+                df["Precio_Alerta"] = (
+                    df["Precio_Entrada"]
+                )
+
+        # ----------------------------------------------------
+        # COPIAR ORIGINAL -> ACTUAL SOLO SI ACTUAL ESTÁ VACÍO
+        # ----------------------------------------------------
+
+        pares = [
+
+            (
+                "Precio_Alerta",
+                "Precio_Actual"
+            ),
+
+            (
+                "Score_Entrada",
+                "Score_Actual"
+            ),
+
+            (
+                "RVOL_Entrada",
+                "RVOL_Actual"
+            ),
+
+            (
+                "RSI_Entrada",
+                "RSI_Actual"
+            ),
+
+            (
+                "ROC20_Entrada",
+                "ROC20_Actual"
+            ),
+
+            (
+                "ATR_Entrada",
+                "ATR_Actual"
+            ),
+
+            (
+                "EMA50_Entrada",
+                "EMA50_Actual"
+            ),
+
+            (
+                "EMA200_Entrada",
+                "EMA200_Actual"
+            ),
+
+            (
+                "Razones_Entrada",
+                "Razones_Actuales"
+            ),
+
+            (
+                "Soporte_Entrada",
+                "Soporte_Actual"
+            ),
+
+            (
+                "Resistencia_Entrada",
+                "Resistencia_Actual"
+            )
+        ]
+
+        for origen, destino in pares:
+
+            mask = (
+
+                df[destino]
+                .astype(str)
+                .str.strip()
+                == ""
+            )
+
+            df.loc[
+                mask,
+                destino
+            ] = df.loc[
+                mask,
+                origen
+            ]
+
+        # ----------------------------------------------------
+        # ESTADO ESTRATEGIA
+        # ----------------------------------------------------
+
+        mask_estado = (
+
+            df["Estado_Estrategia"]
+            .astype(str)
+            .str.strip()
+            == ""
+        )
+
+        df.loc[
+            mask_estado,
+            "Estado_Estrategia"
+        ] = "TESIS_ESTABLE"
+
+        # ----------------------------------------------------
+        # RATIO RR
+        # ----------------------------------------------------
+
+        mask_rr = (
+
+            df["Ratio_RR"]
+            .astype(str)
+            .str.strip()
+            == ""
+        )
+
+        df.loc[
+            mask_rr,
+            "Ratio_RR"
+        ] = str(
+            RR_TARGET
+        )
+
+        # ----------------------------------------------------
+        # ESTADO OPERATIVO
+        # ----------------------------------------------------
+
+        mask_estado_op = (
+
+            df["Estado"]
+            .astype(str)
+            .str.strip()
+            == ""
+        )
+
+        df.loc[
+            mask_estado_op,
+            "Estado"
+        ] = "ACTIVA"
+
+        # ----------------------------------------------------
+        # TEXTO
+        # ----------------------------------------------------
+
+        for col in CAMPOS_TEXTO:
+
+            if col in df.columns:
+
+                df[col] = (
+                    df[col]
+                    .fillna("")
+                    .astype(str)
+                )
+
+        # ----------------------------------------------------
+        # NUMÉRICOS
+        # ----------------------------------------------------
+
+        for col in CAMPOS_NUMERICOS:
+
+            if col in df.columns:
+
+                df[col] = pd.to_numeric(
+                    df[col],
+                    errors="coerce"
+                )
+
+        df = df.reindex(
+            columns=CAMPOS_HISTORIAL
+        )
+
+        df.to_csv(
+            ARCHIVO_HISTORIAL,
+            index=False
+        )
+
+        print(
+            "✅ Historial preparado "
+            "y columnas normalizadas."
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Error preparando historial: {e}"
+        )
+
+
+# ============================================================
+# LEER HISTORIAL
+# ============================================================
+
+def cargar_historial():
+
+    if not os.path.exists(
+        ARCHIVO_HISTORIAL
+    ):
+
+        return pd.DataFrame(
+            columns=CAMPOS_HISTORIAL
+        )
+
+    preparar_historial()
+
+    try:
+
+        df = pd.read_csv(
+            ARCHIVO_HISTORIAL,
+            dtype=str,
+            keep_default_na=False
+        )
+
+        for col in CAMPOS_HISTORIAL:
+
+            if col not in df.columns:
+
+                df[col] = ""
+
+        for col in CAMPOS_TEXTO:
+
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+            )
+
+        for col in CAMPOS_NUMERICOS:
+
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+        return df
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Error leyendo historial: {e}"
+        )
+
+        return pd.DataFrame(
+            columns=CAMPOS_HISTORIAL
+        )
+
+
+# ============================================================
+# CONSTRUIR SNAPSHOT ORIGINAL
+# ============================================================
+
+def construir_original_desde_fila(
+    r
+):
+
+    def num(
+        campo,
+        default=0
+    ):
+
+        try:
+
+            value = r.get(
+                campo,
+                default
+            )
+
+            if pd.isna(
+                value
+            ):
+
+                return default
+
+            return float(
+                value
+            )
+
+        except Exception:
+
+            return default
+
+    return {
+
+        "ticker":
+            str(
+                r.get(
+                    "Ticker",
+                    ""
+                )
+            ),
+
+        "empresa":
+            str(
+                r.get(
+                    "Empresa",
+                    ""
+                )
+            ),
+
+        "precio":
+            num(
+                "Precio_Alerta"
+            ),
+
+        "score":
+            num(
+                "Score_Entrada"
+            ),
+
+        "rvol":
+            num(
+                "RVOL_Entrada"
+            ),
+
+        "rsi":
+            num(
+                "RSI_Entrada"
+            ),
+
+        "roc20":
+            num(
+                "ROC20_Entrada"
+            ),
+
+        "atr":
+            num(
+                "ATR_Entrada"
+            ),
+
+        "e50":
+            num(
+                "EMA50_Entrada"
+            ),
+
+        "e200":
+            num(
+                "EMA200_Entrada"
+            ),
+
+        "razones":
+            str(
+                r.get(
+                    "Razones_Entrada",
+                    ""
+                )
+            ),
+
+        "soporte":
+            num(
+                "Soporte_Entrada"
+            ),
+
+        "resistencia":
+            num(
+                "Resistencia_Entrada"
+            ),
+
+        "analisis_ia":
+            str(
+                r.get(
+                    "Analisis_IA_Entrada",
+                    ""
+                )
+            )
+    }
+
+
+# ============================================================
+# IA - SEGUIMIENTO
+# ============================================================
+
+def comentario_seguimiento(
+    original,
+    actual,
+    fila,
+    evolucion
+):
+
+    pnl_pct = 0.0
+
+    score_actual = actual.get(
+        "score",
+        0
+    )
+
+    score_original = original.get(
+        "score",
+        0
+    )
+
+    try:
+
+        precio_entrada = float(
+            fila["Precio_Alerta"]
+        )
+
+        precio_actual = float(
+            actual["precio"]
+        )
+
+        sl = float(
+            fila["Stop_Loss"]
+        )
+
+        tp = float(
+            fila["Take_Profit"]
+        )
+
+        pnl_pct = (
+
+            (
+                precio_actual
+                /
+                precio_entrada
+            )
+            - 1
+
+        ) * 100
+
+        distancia_sl = (
+
+            (
+                precio_actual
+                -
+                sl
+            )
+            /
+            precio_actual
+
+        ) * 100
+
+        distancia_tp = (
+
+            (
+                tp
+                -
+                precio_actual
+            )
+            /
+            precio_actual
+
+        ) * 100
+
+        delta_score = (
+
+            actual["score"]
+            -
+            original["score"]
+        )
+
+        delta_rvol = (
+
+            actual["rvol"]
+            -
+            original["rvol"]
+        )
+
+        delta_rsi = (
+
+            actual["rsi"]
+            -
+            original["rsi"]
+        )
+
+        delta_roc = (
+
+            actual["roc20"]
+            -
+            original["roc20"]
+        )
+
+        system_prompt = """
+Eres el analista cuantitativo senior de Alura Quant.
+
+Estás monitorizando una estrategia YA ABIERTA.
+
+NO estás buscando una nueva entrada.
+
+Tu tarea es comparar la tesis original que justificó
+la entrada con los datos actuales y explicar cómo está
+evolucionando esa estrategia.
+
+Debes considerar:
+
+- precio desde entrada
+- tendencia
+- score
+- volumen
+- momentum
+- RSI
+- soporte y resistencia
+- proximidad al Stop Loss
+- proximidad al Take Profit
+- tesis original
+- análisis IA original
+
+Debes señalar divergencias importantes.
+
+Si el precio mejora pero los factores que justificaron
+la entrada se deterioran, debes señalarlo.
+
+No debes:
+
+- crear una nueva estrategia
+- modificar Stop Loss
+- modificar Take Profit
+- recomendar una nueva entrada
+- ordenar cerrar la operación
+
+El Estado_Estrategia es una lectura analítica,
+no una orden operativa.
+
+Máximo 3 frases.
+Sin listas.
+Sin títulos.
+Sin lenguaje robótico.
+"""
+
+        user_prompt = f"""
+
+========================
+ACTIVO
+========================
+
+{original['empresa']}
+{original['ticker']}
+
+Último dato de mercado disponible:
+{actual.get('fecha_datos', '')}
+
+
+========================
+TESIS ORIGINAL
+========================
+
+Precio:
+{precio_entrada:.2f}€
+
+Score:
+{original['score']}
+
+RVOL:
+{original['rvol']}x
+
+RSI:
+{original['rsi']}
+
+ROC20:
+{original['roc20']}%
+
+ATR:
+{original['atr']}€
+
+EMA50:
+{original['e50']}€
+
+EMA200:
+{original['e200']}€
+
+Soporte:
+{original['soporte']:.2f}€
+
+Resistencia:
+{original['resistencia']:.2f}€
+
+Razones:
+{original['razones']}
+
+Análisis IA original:
+{original['analisis_ia']}
+
+
+========================
+ESTADO ACTUAL
+========================
+
+Precio:
+{precio_actual:.2f}€
+
+Score:
+{actual['score']}
+
+RVOL:
+{actual['rvol']}x
+
+RSI:
+{actual['rsi']}
+
+ROC20:
+{actual['roc20']}%
+
+ATR:
+{actual['atr']}€
+
+EMA50:
+{actual['e50']}€
+
+EMA200:
+{actual['e200']}€
+
+Soporte actual:
+{actual['soporte']:.2f}€
+
+Resistencia actual:
+{actual['resistencia']:.2f}€
+
+Razones actuales:
+{actual['razones']}
+
+
+========================
+EVOLUCIÓN
+========================
+
+P&L:
+{pnl_pct:+.2f}%
+
+Cambio Score:
+{delta_score:+.0f}
+
+Cambio RVOL:
+{delta_rvol:+.2f}x
+
+Cambio RSI:
+{delta_rsi:+.2f}
+
+Cambio ROC20:
+{delta_roc:+.2f} puntos
+
+
+Lectura cuantitativa:
+
+{evolucion}
+
+
+========================
+ESTRATEGIA ORIGINAL
+========================
+
+Entrada:
+{precio_entrada:.2f}€
+
+Stop Loss:
+{sl:.2f}€
+
+Take Profit:
+{tp:.2f}€
+
+Distancia actual al SL:
+{distancia_sl:.2f}%
+
+Distancia actual al TP:
+{distancia_tp:.2f}%
+
+
+INSTRUCCIÓN
+
+Explica cómo está evolucionando la tesis original.
+
+Determina si está:
+
+- reforzada
+- estable
+- debilitada
+- invalidada
+
+y explica brevemente por qué.
+
+Prioriza los cambios relevantes frente a repetir
+simplemente los datos.
+"""
+
+        respuesta = client.chat.completions.create(
+
+            model=MODELO_LOCAL,
+
+            messages=[
+
+                {
+                    "role":
+                        "system",
+
+                    "content":
+                        system_prompt
+                },
+
+                {
+                    "role":
+                        "user",
+
+                    "content":
+                        user_prompt
+                }
+            ],
+
+            temperature=0.65
+        )
+
+        return (
+            respuesta
+            .choices[0]
+            .message
+            .content
+            .strip()
+        )
+
+    except Exception as e:
+
+        print(
+            f"⚠️ Error IA seguimiento: {e}"
+        )
+
+        return (
+
+            f"La posición presenta una evolución "
+            f"del {pnl_pct:+.2f}% desde la entrada, "
+            f"con un score actual de "
+            f"{score_actual} frente a "
+            f"{score_original} en la entrada."
+        )
+
+
+# ============================================================
+# GUARDAR NUEVA ALERTA
+# ============================================================
+
+def guardar(
+    c,
+    comentario
+):
+
+    preparar_historial()
+
+    df = cargar_historial()
+
+    nueva_fila = {
+
+        "Fecha":
+            ahora().strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+
+        "Ticker":
+            c["ticker"],
+
+        "Empresa":
+            c["empresa"],
+
+        "Sector":
+            c["sector"],
+
+        "Icono":
+            c["icono"],
+
+        "Modo":
+            c["modo"],
+
+        # ----------------------------------------------------
+        # ORIGINAL
+        # ----------------------------------------------------
+
+        "Precio_Alerta":
+            c["precio"],
+
+        "Score_Entrada":
+            c["score"],
+
+        "RVOL_Entrada":
+            c["rvol"],
+
+        "RSI_Entrada":
+            c["rsi"],
+
+        "ROC20_Entrada":
+            c["roc20"],
+
+        "ATR_Entrada":
+            c["atr"],
+
+        "EMA50_Entrada":
+            c["e50"],
+
+        "EMA200_Entrada":
+            c["e200"],
+
+        "Razones_Entrada":
+            c["razones"],
+
+        "Soporte_Entrada":
+            c["soporte"],
+
+        "Resistencia_Entrada":
+            c["resistencia"],
+
+        "Analisis_IA_Entrada":
+            comentario.replace(
+                "\n",
+                " "
+            ),
+
+        # ----------------------------------------------------
+        # ESTRATEGIA
+        # ----------------------------------------------------
+
+        "Stop_Loss":
+            c["stop"],
+
+        "Take_Profit":
+            c["tp"],
+
+        "Ratio_RR":
+            RR_TARGET,
+
+        "Riesgo_Euros":
+            c["riesgo"],
+
+        "Acciones":
+            c["acciones"],
+
+        "Nominal":
+            c["nominal"],
+
+        # ----------------------------------------------------
+        # ACTUAL
+        # ----------------------------------------------------
+
+        "Precio_Actual":
+            c["precio"],
+
+        "Score_Actual":
+            c["score"],
+
+        "RVOL_Actual":
+            c["rvol"],
+
+        "RSI_Actual":
+            c["rsi"],
+
+        "ROC20_Actual":
+            c["roc20"],
+
+        "ATR_Actual":
+            c["atr"],
+
+        "EMA50_Actual":
+            c["e50"],
+
+        "EMA200_Actual":
+            c["e200"],
+
+        "Razones_Actuales":
+            c["razones"],
+
+        "Soporte_Actual":
+            c["soporte"],
+
+        "Resistencia_Actual":
+            c["resistencia"],
+
+        "Distancia_SL_Pct":
+            round(
+                (
+                    (
+                        c["precio"]
+                        -
+                        c["stop"]
+                    )
+                    /
+                    c["precio"]
+                )
+                * 100,
+                2
+            ),
+
+        "Distancia_TP_Pct":
+            round(
+                (
+                    (
+                        c["tp"]
+                        -
+                        c["precio"]
+                    )
+                    /
+                    c["precio"]
+                )
+                * 100,
+                2
+            ),
+
+        "P&L_Actual_Pct":
+            0,
+
+        "Estado_Estrategia":
+            "TESIS_ESTABLE",
+
+        "Ultima_Actualizacion":
+            ahora().strftime(
+                "%Y-%m-%d %H:%M"
+            ),
+
+        "Fecha_Mercado_Actual":
+            str(c.get("fecha_datos", "")),
+
+        "Analisis_IA_Actual":
+            comentario.replace(
+                "\n",
+                " "
+            ),
+
+        # ----------------------------------------------------
+        # OPERATIVO
+        # ----------------------------------------------------
+
+        "Estado":
+            "ACTIVA",
+
+        "Fecha_Salida":
+            "",
+
+        "Resultado_R":
+            "",
+
+        "MAE_R":
+            "",
+
+        "MFE_R":
+            ""
+    }
+
+    nueva_df = pd.DataFrame(
+        [nueva_fila]
+    )
+
+    df = pd.concat(
+        [
+            df,
+            nueva_df
+        ],
+        ignore_index=True
+    )
+
+    for col in CAMPOS_TEXTO:
+
+        df[col] = (
+            df[col]
+            .fillna("")
+            .astype(str)
+        )
+
+    for col in CAMPOS_NUMERICOS:
+
+        df[col] = pd.to_numeric(
+            df[col],
+            errors="coerce"
+        )
+
+    df = df.reindex(
+        columns=CAMPOS_HISTORIAL
+    )
+
+    df.to_csv(
+        ARCHIVO_HISTORIAL,
+        index=False
+    )
+
+
+# ============================================================
+# BLOQUEADOS
+# ============================================================
+
+def bloqueados():
+
+    df = cargar_historial()
+
+    if df.empty:
+
+        return set()
+
+    bloqueados_set = set()
+
+    hoy = ahora().date()
+
+    for _, r in df.iterrows():
+
+        estado = str(
+            r.get(
+                "Estado",
+                ""
+            )
+        )
+
+        if estado == "ACTIVA":
+
+            ticker = str(
+                r.get(
+                    "Ticker",
+                    ""
+                )
+            ).strip()
+
+            if ticker:
+
+                bloqueados_set.add(
+                    ticker
+                )
+
+            continue
+
+        if estado == "STOP_SALTADO":
+
+            try:
+
+                fecha_alerta = (
+                    pd.to_datetime(
+                        r["Fecha"]
+                    ).date()
+                )
+
+                dias = (
+                    hoy
+                    -
+                    fecha_alerta
+                ).days
+
+                if (
+                    dias
+                    <
+                    CUARENTENA_STOP_DIAS
+                ):
+
+                    ticker = str(
+                        r["Ticker"]
+                    ).strip()
+
+                    if ticker:
+
+                        bloqueados_set.add(
+                            ticker
+                        )
+
+            except Exception:
+
+                continue
+
+    return bloqueados_set
+
+
+# ============================================================
+# ACTUALIZAR ALERTAS ACTIVAS
+# ============================================================
+
+def normalizar_fecha_mercado(valor):
+    """Devuelve YYYY-MM-DD para comparar sesiones reales de mercado."""
+    if valor is None or str(valor).strip() == "":
+        return ""
+    try:
+        return pd.Timestamp(valor).strftime("%Y-%m-%d")
     except Exception:
-        return f"Estructura técnica sólida con un score de {c['score']} y un volumen relativo de {c['rvol']}x, respaldada por momento alcista en tendencia."
-def guardar(c,txt):
-    fields=["Fecha","Ticker","Empresa","Sector","Icono","Modo","Precio_Alerta","Stop_Loss","Take_Profit","Ratio_RR","Riesgo_Euros","Acciones","Nominal","Score","RVOL","RSI","ROC20","ATR","Regimen","Razones","Analisis_IA","Estado","Fecha_Salida","Resultado_R","MAE_R","MFE_R"]; new=not os.path.exists(ARCHIVO_HISTORIAL)
-    with open(ARCHIVO_HISTORIAL,"a",newline="",encoding="utf-8") as f:
-        w=csv.DictWriter(f,fieldnames=fields); w.writeheader() if new else None; w.writerow({"Fecha":ahora().strftime("%Y-%m-%d %H:%M"),"Ticker":c["ticker"],"Empresa":c["empresa"],"Sector":c["sector"],"Icono":c["icono"],"Modo":c["modo"],"Precio_Alerta":c["precio"],"Stop_Loss":c["stop"],"Take_Profit":c["tp"],"Ratio_RR":RR_TARGET,"Riesgo_Euros":c["riesgo"],"Acciones":c["acciones"],"Nominal":c["nominal"],"Score":c["score"],"RVOL":c["rvol"],"RSI":c["rsi"],"ROC20":c["roc20"],"ATR":c["atr"],"Regimen":c["regimen"],"Razones":c["razones"],"Analisis_IA":txt.replace("\n"," "),"Estado":"ACTIVA","Fecha_Salida":"","Resultado_R":"","MAE_R":"","MFE_R":""})
+        return str(valor).strip()[:10]
+
+
+def actualizar_alertas_activas():
+    """
+    Actualiza únicamente el estado ACTUAL de las alertas.
+
+    REGLAS:
+    - Precio_Alerta, Score_Entrada, indicadores de entrada, Stop_Loss,
+      Take_Profit y tesis original son INMUTABLES.
+    - Precio/indicadores/tesis IA actuales solo cambian cuando Yahoo
+      entrega una sesión de mercado distinta a Fecha_Mercado_Actual.
+    - Si sábado, domingo, festivo o Yahoo devuelve la misma última vela,
+      no se llama a la IA y se conserva el comentario anterior.
+    """
+    df = cargar_historial()
+    if df.empty:
+        return
+
+    indices = df.index[df["Estado"].astype(str) == "ACTIVA"]
+    if len(indices) == 0:
+        print("ℹ️ No hay alertas ACTIVA para actualizar.")
+        return
+
+    print(f"\n🔄 Revisando {len(indices)} alerta(s) ACTIVA...")
+    changed = False
+
+    for i in indices:
+        ticker = str(df.at[i, "Ticker"]).strip()
+        try:
+            datos, estado_descarga = descargar_historico_ticker(
+                ticker, period=PERIODO_ACTUAL
+            )
+            if datos is None:
+                print(f"⚠️ {ticker}: sin actualización de mercado. Motivo: {estado_descarga}")
+                continue
+
+            actual = obtener_estado_actual(ticker, datos)
+            if actual is None:
+                print(f"⚠️ {ticker}: no se pudo calcular estado actual.")
+                continue
+
+            fecha_mercado = normalizar_fecha_mercado(actual.get("fecha_datos"))
+            fecha_guardada = normalizar_fecha_mercado(df.at[i, "Fecha_Mercado_Actual"])
+
+            if not fecha_mercado:
+                print(f"⚠️ {ticker}: Yahoo no devolvió una fecha de mercado válida.")
+                continue
+
+            # No hay vela nueva: conservar TODO el snapshot actual y la IA.
+            if fecha_guardada and fecha_mercado <= fecha_guardada:
+                print(
+                    f"⏸️ {ticker}: sin nueva sesión de mercado "
+                    f"({fecha_mercado}). Se conserva el comentario IA actual."
+                )
+                continue
+
+            original = construir_original_desde_fila(df.loc[i])
+            evolucion = evaluar_evolucion_estrategia(original, actual)
+            estado_tesis = estado_estrategia(original, actual)
+
+            entrada = float(df.at[i, "Precio_Alerta"])
+            precio_actual = float(actual["precio"])
+            sl = float(df.at[i, "Stop_Loss"])
+            tp = float(df.at[i, "Take_Profit"])
+
+            pnl_pct = ((precio_actual / entrada) - 1) * 100
+            distancia_sl = ((precio_actual - sl) / precio_actual) * 100
+            distancia_tp = ((tp - precio_actual) / precio_actual) * 100
+
+            comentario = comentario_seguimiento(
+                original, actual, df.loc[i], evolucion
+            )
+            comentario = str(comentario or "").replace("\n", " ").strip()
+
+            # Actualizamos SOLO campos dinámicos.
+            df.at[i, "Precio_Actual"] = precio_actual
+            df.at[i, "Score_Actual"] = actual["score"]
+            df.at[i, "RVOL_Actual"] = actual["rvol"]
+            df.at[i, "RSI_Actual"] = actual["rsi"]
+            df.at[i, "ROC20_Actual"] = actual["roc20"]
+            df.at[i, "ATR_Actual"] = actual["atr"]
+            df.at[i, "EMA50_Actual"] = actual["e50"]
+            df.at[i, "EMA200_Actual"] = actual["e200"]
+            df.at[i, "Razones_Actuales"] = actual["razones"]
+            df.at[i, "Soporte_Actual"] = actual["soporte"]
+            df.at[i, "Resistencia_Actual"] = actual["resistencia"]
+            df.at[i, "Distancia_SL_Pct"] = round(distancia_sl, 2)
+            df.at[i, "Distancia_TP_Pct"] = round(distancia_tp, 2)
+            df.at[i, "P&L_Actual_Pct"] = round(pnl_pct, 2)
+            df.at[i, "Estado_Estrategia"] = estado_tesis
+            df.at[i, "Fecha_Mercado_Actual"] = fecha_mercado
+            df.at[i, "Ultima_Actualizacion"] = ahora().strftime("%Y-%m-%d %H:%M")
+
+            # Nunca sustituimos un comentario válido por vacío.
+            if comentario:
+                df.at[i, "Analisis_IA_Actual"] = comentario
+
+            changed = True
+
+            icono = {
+                "TESIS_REFORZADA": "🟢",
+                "TESIS_ESTABLE": "🟡",
+                "TESIS_DEBILITADA": "🟠",
+                "TESIS_INVALIDADA": "🔴",
+            }.get(estado_tesis, "⚪")
+
+            print(
+                f"{icono} {ticker} | Mercado {fecha_mercado} | "
+                f"Entrada {entrada:.2f} | Actual {precio_actual:.2f} | "
+                f"P&L {pnl_pct:+.2f}% | Score {original['score']:.0f}→{actual['score']} | "
+                f"Tesis: {estado_tesis} | IA: {'OK' if comentario else 'CONSERVADA'}"
+            )
+
+        except Exception as e:
+            print(f"⚠️ Error actualizando {ticker}: {e}")
+
+    if changed:
+        for col in CAMPOS_TEXTO:
+            df[col] = df[col].fillna("").astype(str)
+        for col in CAMPOS_NUMERICOS:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df = df.reindex(columns=CAMPOS_HISTORIAL)
+        df.to_csv(ARCHIVO_HISTORIAL, index=False)
+        print("✅ Seguimiento de alertas actualizado con nuevas sesiones de mercado.")
+    else:
+        print("ℹ️ No hubo nuevas sesiones de mercado. No se modificó el seguimiento.")
+
+
+# ============================================================
+# AUDITORÍA SL / TP
+# ============================================================
 
 def auditar():
-    if not os.path.exists(ARCHIVO_HISTORIAL):return
-    try:df=pd.read_csv(ARCHIVO_HISTORIAL)
-    except:return
-    changed=False
+
+    """
+    AUDITORÍA CORREGIDA.
+
+    Antes:
+
+        descargar_historico_ticker(
+            ticker,
+            start=inicio
+        )
+
+    podía acabar provocando errores de rango temporal
+    en yfinance.
+
+    Ahora:
+
+        1. descargamos period=5y
+        2. filtramos LOCALMENTE desde la entrada
+        3. recorremos solamente las velas reales devueltas
+
+    No se solicita nunca una fecha futura.
+    """
+
+    df = cargar_historial()
+
+    if df.empty:
+
+        return
+
+    changed = False
+
     hoy = ahora().date()
-    for i,r in df.iterrows():
-        if str(r.get("Estado"))!="ACTIVA":continue
+
+    for i, r in df.iterrows():
+
+        if str(
+            r.get(
+                "Estado",
+                ""
+            )
+        ) != "ACTIVA":
+
+            continue
+
+        ticker = str(
+            r.get(
+                "Ticker",
+                ""
+            )
+        ).strip()
+
+        if not ticker:
+
+            continue
+
         try:
-            f=pd.to_datetime(r.Fecha).date()
-            inicio = f + timedelta(days=1)
+
+            fecha_alerta = (
+                pd.to_datetime(
+                    r["Fecha"]
+                ).date()
+            )
+
+            inicio = (
+                fecha_alerta
+                +
+                timedelta(days=1)
+            )
+
+            # ------------------------------------------------
+            # Si todavía no existe ninguna sesión posterior
+            # a la entrada, no auditamos.
+            # ------------------------------------------------
+
             if inicio > hoy:
+
                 continue
-            d=norm(yf.download(r.Ticker, start=inicio.isoformat(), end=hoy.isoformat(), auto_adjust=True, progress=False, threads=False))
-            if d.empty:continue
-            sl,tp=float(r.Stop_Loss),float(r.Take_Profit)
-            for idx,v in d.iterrows():
-                lo,hi=float(v.Low),float(v.High)
-                if lo<=sl: state,res="STOP_SALTADO 🔴",-1.0
-                elif hi>=tp: state,res="OBJETIVO_CUMPLIDO 🟢",RR_TARGET
-                else:continue
-                df.at[i,"Estado"]=state; df.at[i,"Fecha_Salida"]=pd.Timestamp(idx).strftime("%Y-%m-%d"); df.at[i,"Resultado_R"]=res; changed=True; break
-        except:continue
-    if changed:df.to_csv(ARCHIVO_HISTORIAL,index=False)
-    closed=df[df.Estado.astype(str).str.contains("OBJETIVO|STOP",regex=True,na=False)]
-    if len(closed):print(f"📊 Cerradas {len(closed)} | Expectancy {pd.to_numeric(closed.Resultado_R,errors='coerce').mean():.2f} R")
+
+            # ------------------------------------------------
+            # DESCARGA SIN START NI END
+            # ------------------------------------------------
+
+            datos, estado_descarga = (
+                descargar_historico_ticker(
+                    ticker,
+                    period=PERIODO_AUDITORIA
+                )
+            )
+
+            if datos is None:
+
+                print(
+                    f"⚠️ Auditoría {ticker}: "
+                    f"sin datos disponibles. "
+                    f"Motivo: {estado_descarga}"
+                )
+
+                continue
+
+            # ------------------------------------------------
+            # FILTRADO LOCAL
+            # ------------------------------------------------
+
+            datos_auditoria = (
+                filtrar_desde_fecha(
+                    datos,
+                    inicio
+                )
+            )
+
+            if (
+                datos_auditoria is None
+                or
+                datos_auditoria.empty
+            ):
+
+                print(
+                    f"ℹ️ Auditoría {ticker}: "
+                    f"no hay sesiones posteriores "
+                    f"a {inicio} en los datos "
+                    f"descargados."
+                )
+
+                continue
+
+            sl = float(
+                r["Stop_Loss"]
+            )
+
+            tp = float(
+                r["Take_Profit"]
+            )
+
+            # ------------------------------------------------
+            # RECORRER VELAS
+            # ------------------------------------------------
+
+            for fecha, vela in (
+                datos_auditoria.iterrows()
+            ):
+
+                try:
+
+                    fecha_comparable = (
+                        pd.Timestamp(
+                            fecha
+                        ).date()
+                    )
+
+                except Exception:
+
+                    continue
+
+                if fecha_comparable < inicio:
+
+                    continue
+
+                # ------------------------------------------------
+                # VALIDACIÓN DE OHLC
+                # ------------------------------------------------
+
+                try:
+
+                    low = float(
+                        vela.Low
+                    )
+
+                    high = float(
+                        vela.High
+                    )
+
+                except Exception:
+
+                    continue
+
+                if pd.isna(low) or pd.isna(high):
+
+                    continue
+
+                # ------------------------------------------------
+                # CRITERIO CONSERVADOR
+                #
+                # Si la misma vela toca SL y TP,
+                # asumimos STOP primero.
+                # ------------------------------------------------
+
+                if low <= sl:
+
+                    estado = (
+                        "STOP_SALTADO"
+                    )
+
+                    resultado = -1.0
+
+                elif high >= tp:
+
+                    estado = (
+                        "OBJETIVO_CUMPLIDO"
+                    )
+
+                    resultado = RR_TARGET
+
+                else:
+
+                    continue
+
+                # ------------------------------------------------
+                # ACTUALIZAR ESTADO OPERATIVO
+                #
+                # NO TOCAMOS:
+                #
+                # Precio_Alerta
+                # Score_Entrada
+                # RVOL_Entrada
+                # ...
+                # Stop_Loss
+                # Take_Profit
+                # ------------------------------------------------
+
+                df.at[
+                    i,
+                    "Estado"
+                ] = estado
+
+                df.at[
+                    i,
+                    "Fecha_Salida"
+                ] = pd.Timestamp(
+                    fecha
+                ).strftime(
+                    "%Y-%m-%d"
+                )
+
+                df.at[
+                    i,
+                    "Resultado_R"
+                ] = resultado
+
+                changed = True
+
+                print(
+
+                    f"{'🔴' if resultado < 0 else '🟢'} "
+
+                    f"{ticker} -> "
+
+                    f"{estado} | "
+
+                    f"{pd.Timestamp(fecha):%Y-%m-%d}"
+                )
+
+                break
+
+        except Exception as e:
+
+            print(
+                f"⚠️ Error auditando "
+                f"{ticker}: {e}"
+            )
+
+            continue
+
+    # ========================================================
+    # GUARDAR CAMBIOS
+    # ========================================================
+
+    if changed:
+
+        for col in CAMPOS_TEXTO:
+
+            df[col] = (
+                df[col]
+                .fillna("")
+                .astype(str)
+            )
+
+        for col in CAMPOS_NUMERICOS:
+
+            df[col] = pd.to_numeric(
+                df[col],
+                errors="coerce"
+            )
+
+        df = df.reindex(
+            columns=CAMPOS_HISTORIAL
+        )
+
+        df.to_csv(
+            ARCHIVO_HISTORIAL,
+            index=False
+        )
+
+    # ========================================================
+    # ESTADÍSTICAS
+    # ========================================================
+
+    cerradas = df[
+        df["Estado"]
+        .astype(str)
+        .str.contains(
+            "OBJETIVO|STOP",
+            regex=True,
+            na=False
+        )
+    ]
+
+    if len(cerradas):
+
+        resultados = pd.to_numeric(
+            cerradas["Resultado_R"],
+            errors="coerce"
+        )
+
+        expectancy = (
+            resultados
+            .dropna()
+            .mean()
+        )
+
+        if pd.notna(
+            expectancy
+        ):
+
+            print(
+                f"📊 Cerradas "
+                f"{len(cerradas)} | "
+                f"Expectancy "
+                f"{expectancy:.2f} R"
+            )
+
+
+# ============================================================
+# GIT
+# ============================================================
 
 def git():
+
     try:
-        subprocess.run(["git","add","."],check=True); s=subprocess.run(["git","status","--porcelain"],capture_output=True,text=True)
-        if s.stdout.strip():subprocess.run(["git","commit","-m","Alura Quant V4 masivo 1000 tickers por lotes"],check=True); subprocess.run(["git","push","origin","main"],check=True)
-    except Exception as e:print(f"ℹ️ Git: {e}")
+
+        subprocess.run(
+            [
+                "git",
+                "add",
+                "."
+            ],
+            check=True
+        )
+
+        status = subprocess.run(
+
+            [
+                "git",
+                "status",
+                "--porcelain"
+            ],
+
+            capture_output=True,
+
+            text=True
+        )
+
+        if status.stdout.strip():
+
+            subprocess.run(
+
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    "Alura Quant V4.3 "
+                    "Yahoo fechas robustas"
+                ],
+
+                check=True
+            )
+
+            try:
+
+                subprocess.run(
+
+                    [
+                        "git",
+                        "push",
+                        "origin",
+                        "main"
+                    ],
+
+                    check=True
+                )
+
+                print(
+                    "✅ Git push completado."
+                )
+
+            except Exception as e:
+
+                print(
+                    "⚠️ Commit local realizado, "
+                    "pero GitHub no respondió: "
+                    f"{e}"
+                )
+
+        else:
+
+            print(
+                "ℹ️ Git: no hay cambios."
+            )
+
+    except Exception as e:
+
+        print(
+            f"ℹ️ Git: {e}"
+        )
+
+
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
-    modo=modo_actual(); print(f"ALURA QUANT V4 (Masivo) | {ahora():%Y-%m-%d %H:%M} Madrid | {modo} | Total Activos: {len(activos)}")
+
+    modo = modo_actual()
+
+    print(
+        "\n"
+        "============================================================\n"
+        "ALURA QUANT V4.3\n"
+        "============================================================"
+    )
+
+    print(
+        f"Fecha ejecución: "
+        f"{ahora():%Y-%m-%d %H:%M}"
+    )
+
+    print(
+        f"Modo: "
+        f"{modo}"
+    )
+
+    print(
+        f"Activos universo: "
+        f"{len(activos)}"
+    )
+
+    # ========================================================
+    # 1. PREPARAR HISTORIAL
+    # ========================================================
+
+    print(
+        "\n📁 1. PREPARANDO HISTORIAL"
+    )
+
+    preparar_historial()
+
+    # ========================================================
+    # 2. AUDITORÍA
+    # ========================================================
+
+    print(
+        "\n🔎 2. AUDITORÍA SL / TP"
+    )
+
     auditar()
-    blocked=bloqueados()
-    print(f"Bloqueados por cuarentena/activas: {len(blocked)}")
-    
-    activos_a_analizar = [t for t in activos if t not in blocked]
-    out = []
 
-    for i in range(0, len(activos_a_analizar), TAMANO_LOTE):
-        lote = activos_a_analizar[i:i + TAMANO_LOTE]
-        print(f"📥 Descargando lote {i//TAMANO_LOTE + 1} ({len(lote)} activos)...")
-        
-        try:
-            datos_lote = yf.download(lote, period="1y", interval="1d", auto_adjust=True, group_by="ticker", progress=False, threads=True)
-            
-            for t in lote:
-                try:
-                    if len(lote) == 1:
-                        df_t = norm(datos_lote).dropna(subset=["Close","High","Low","Volume"])
-                    else:
-                        if t in datos_lote.columns.levels[0]:
-                            df_t = norm(datos_lote[t]).dropna(subset=["Close","High","Low","Volume"])
-                        else:
-                            continue
-                    
-                    c = procesar_dataframe_activo(t, df_t)
-                    if c: out.append(c)
-                except Exception as ex:
+    # ========================================================
+    # 3. SEGUIMIENTO ACTIVAS
+    # ========================================================
+
+    print(
+        "\n🧠 3. SEGUIMIENTO DE TESIS ACTIVAS"
+    )
+
+    actualizar_alertas_activas()
+
+    # ========================================================
+    # 4. BLOQUEADOS
+    # ========================================================
+
+    blocked = bloqueados()
+
+    print(
+        f"\n🔒 Tickers bloqueados: "
+        f"{len(blocked)}"
+    )
+
+    # ========================================================
+    # 5. NUEVAS OPORTUNIDADES
+    # ========================================================
+
+    activos_a_analizar = [
+
+        t
+
+        for t in activos
+
+        if t not in blocked
+    ]
+
+    print(
+        f"🔍 Tickers a analizar: "
+        f"{len(activos_a_analizar)}"
+    )
+
+    nuevas_alertas = []
+
+    # ========================================================
+    # 6. DESCARGA POR LOTES
+    # ========================================================
+
+    for inicio in range(
+
+        0,
+
+        len(activos_a_analizar),
+
+        TAMANO_LOTE
+    ):
+
+        lote = activos_a_analizar[
+            inicio:
+            inicio + TAMANO_LOTE
+        ]
+
+        print(
+
+            f"\n📥 Lote "
+            f"{inicio // TAMANO_LOTE + 1} "
+            f"| "
+            f"{len(lote)} activos"
+        )
+
+        resultados_lote = descargar_lote(
+            lote,
+            period=PERIODO_ACTUAL
+        )
+
+        for ticker in lote:
+
+            try:
+
+                datos, estado_descarga = (
+                    resultados_lote.get(
+                        ticker,
+                        (
+                            None,
+                            "SIN_RESULTADO"
+                        )
+                    )
+                )
+
+                if datos is None:
+
+                    print(
+                        f"⚠️ {ticker}: "
+                        f"sin datos disponibles. "
+                        f"No se marcará como delisted. "
+                        f"Motivo: "
+                        f"{estado_descarga}"
+                    )
+
                     continue
-        except Exception as e:
-            print(f"⚠️ Error descargando lote: {e}")
 
-    out.sort(key=lambda x:(x["score"],x["rvol"]),reverse=True)
-    print(f"\nSeñales encontradas: {len(out)}")
-    
-    for c in out:
-        txt=comentario(c); guardar(c,txt); print(f"\n{c['icono']} {c['empresa']} | Score {c['score']} | Entrada {c['precio']} | SL {c['stop']} | TP {c['tp']} | {c['acciones']} acciones\n{txt}")
-    
+                resultado = (
+                    procesar_dataframe_activo(
+                        ticker,
+                        datos
+                    )
+                )
+
+                if resultado:
+
+                    nuevas_alertas.append(
+                        resultado
+                    )
+
+            except Exception as e:
+
+                print(
+                    f"⚠️ Error "
+                    f"{ticker}: {e}"
+                )
+
+    # ========================================================
+    # 7. ORDENAR
+    # ========================================================
+
+    nuevas_alertas.sort(
+
+        key=lambda x: (
+
+            x["score"],
+            x["rvol"]
+        ),
+
+        reverse=True
+    )
+
+    print(
+        f"\n📊 Nuevas señales: "
+        f"{len(nuevas_alertas)}"
+    )
+
+    # ========================================================
+    # 8. GUARDAR NUEVAS ALERTAS
+    # ========================================================
+
+    for c in nuevas_alertas:
+
+        comentario = (
+            comentario_entrada(c)
+        )
+
+        guardar(
+            c,
+            comentario
+        )
+
+        print(
+            "\n"
+            f"{c['icono']} "
+            f"{c['empresa']} "
+            f"({c['ticker']})"
+        )
+
+        print(
+            f"Datos mercado: "
+            f"{c['fecha_datos']}"
+        )
+
+        print(
+            f"Score: "
+            f"{c['score']}"
+        )
+
+        print(
+            f"Entrada: "
+            f"{c['precio']:.2f}€"
+        )
+
+        print(
+            f"SL: "
+            f"{c['stop']:.2f}€"
+        )
+
+        print(
+            f"TP: "
+            f"{c['tp']:.2f}€"
+        )
+
+        print(
+            f"Acciones: "
+            f"{c['acciones']}"
+        )
+
+        print(
+            f"Riesgo: "
+            f"{c['riesgo']:.2f}€"
+        )
+
+        print(
+            f"IA: "
+            f"{comentario}"
+        )
+
+    # ========================================================
+    # 9. GIT
+    # ========================================================
+
+    print(
+        "\n💾 Guardando cambios..."
+    )
+
     git()
 
-if __name__=="__main__":main()
+    print(
+        "\n============================================================"
+    )
+
+    print(
+        "✅ ALURA QUANT V4.3 FINALIZADO"
+    )
+
+    print(
+        "============================================================"
+    )
+
+
+# ============================================================
+# EJECUCIÓN
+# ============================================================
+
+if __name__ == "__main__":
+
+    main()
