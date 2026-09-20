@@ -823,6 +823,11 @@ section[data-testid="stSidebar"] {
 
 }
 
+/* Ocultar widget inferior derecho (GitHub / Streamlit branding) */
+div[data-testid="stStatusWidget"] {
+    display: none !important;
+}
+
 .block-container {
 
     max-width:
