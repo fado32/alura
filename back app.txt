@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 
 # ============================================================
@@ -17,6 +19,45 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+# ============================================================
+# CONFIGURACIÓN DE GOOGLE SHEETS
+# ============================================================
+
+def conectar_google_sheets(nombre_pestana):
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    try:
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("Alura_DB").worksheet(nombre_pestana)
+        return sheet
+    except Exception as e:
+        print(f"Error conectando a Google Sheets: {e}")
+        return None
+
+def guardar_suscriptor_cloud(email, tipo="free"):
+    try:
+        pestana = "free" if tipo == "free" else "vip"
+        sheet = conectar_google_sheets(pestana)
+        if sheet is None:
+            return "error"
+        
+        registros = sheet.get_all_records()
+        df = pd.DataFrame(registros)
+        
+        if not df.empty and 'email' in df.columns and email in df['email'].values:
+            return "exists"
+        
+        fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet.append_row([email, fecha_actual])
+        return "success"
+    except Exception as e:
+        print(f"Error guardando suscriptor: {e}")
+        return "error"
 
 
 # ============================================================
@@ -74,6 +115,67 @@ def safe_float(value, default=None):
     except Exception:
 
         return default
+
+
+def preparar_fecha(df):
+    """Normaliza las columnas de fecha del historial."""
+    if df is None:
+        return pd.DataFrame()
+    df = df.copy()
+    for col in ("Fecha", "Ultima_Actualizacion", "Fecha_Mercado_Actual", "Ultima_Ejecucion"):
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
+
+
+def formatear_numero(valor, decimales=2, sufijo="", signo=False):
+    """Formatea un número de forma segura para la interfaz."""
+    if valor is None or pd.isna(valor):
+        return "—"
+    try:
+        valor = float(valor)
+    except (TypeError, ValueError):
+        return "—"
+    prefijo = "+" if signo and valor > 0 else ("−" if signo and valor < 0 else "")
+    return f"{prefijo}{abs(valor):,.{decimales}f}{sufijo}"
+
+
+def calcular_pnl_posicion(precio_actual, precio_entrada, capital=300.0):
+    """Devuelve P&L monetario y porcentual de una posición."""
+    if precio_actual is None or precio_entrada is None or precio_entrada <= 0:
+        return None, None
+    porcentaje = (float(precio_actual) - float(precio_entrada)) / float(precio_entrada) * 100
+    beneficio = float(capital) * porcentaje / 100
+    return beneficio, porcentaje
+
+
+def calcular_metricas(df):
+    """Calcula métricas globales del historial."""
+    if df is None or df.empty:
+        return {"total_alertas": 0, "exitos": 0, "fallos": 0, "activas": 0, "win_rate": 0.0}
+    estados = df["Estado"].astype(str) if "Estado" in df.columns else pd.Series("", index=df.index)
+    activos = estados.str.contains("ACTIVA", na=False, regex=False)
+    exitos = estados.str.contains("OBJETIVO_CUMPLIDO", na=False, regex=False)
+    fallos = estados.str.contains("STOP_SALTADO", na=False, regex=False)
+    cerradas = int(exitos.sum() + fallos.sum())
+    win_rate = float(exitos.sum() / cerradas * 100) if cerradas else 0.0
+    return {
+        "total_alertas": int(len(df)),
+        "exitos": int(exitos.sum()),
+        "fallos": int(fallos.sum()),
+        "activas": int(activos.sum()),
+        "win_rate": win_rate,
+    }
+
+
+def formatear_tesis_ia(texto):
+    """Limpia y escapa el comentario de IA para HTML."""
+    if texto is None or pd.isna(texto):
+        return "Sin información disponible."
+    texto = str(texto).strip()
+    if not texto:
+        return "Sin información disponible."
+    return html.escape(texto).replace("\n", "<br>")
 
 
 def obtener_total_activos():
@@ -174,270 +276,30 @@ def obtener_precio_actual(ticker):
 # ============================================================
 
 def obtener_precios_activos(df):
-
     """
-    Obtiene una única vez el precio actual de cada ticker
-    activo.
+    Usa primero Precio_Actual persistido por bot.py.
+    Solo consulta Yahoo como fallback cuando el CSV no tiene precio.
+    Así la web no inventa una actualización durante fines de semana/festivos.
     """
-
     precios = {}
-
     if df.empty or "Ticker" not in df.columns:
         return precios
 
-    tickers = (
-        df["Ticker"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-        .tolist()
-    )
-
-    for ticker in tickers:
-
+    for _, row in df.iterrows():
+        ticker = str(row.get("Ticker", "")).strip()
         if not ticker:
             continue
 
-        precios[ticker] = obtener_precio_actual(
-            ticker
-        )
+        precio_csv = safe_float(row.get("Precio_Actual"))
+        if precio_csv is not None:
+            precios[ticker] = precio_csv
+            continue
+
+        precio = obtener_precio_actual(ticker)
+        if precio is not None:
+            precios[ticker] = precio
 
     return precios
-
-
-# ============================================================
-# FORMATEADORES
-# ============================================================
-
-def formatear_numero(
-    value,
-    decimals=2,
-    suffix="",
-    signo=False
-):
-    """
-    Formatea números en formato español:
-
-        1234.56  -> 1.234,56
-        1234.56  -> +1.234,56 si signo=True
-        -1234.56 -> -1.234,56
-
-    Los cálculos internos siguen utilizando float.
-    """
-
-    if value is None:
-        return "—"
-
-    try:
-
-        numero = float(value)
-
-        texto = f"{numero:,.{decimals}f}"
-
-        # Conversión de formato anglosajón:
-        # 1,234.56
-        #
-        # a formato español:
-        # 1.234,56
-        texto = (
-            texto
-            .replace(",", "TEMP")
-            .replace(".", ",")
-            .replace("TEMP", ".")
-        )
-
-        if signo and numero > 0:
-            texto = "+" + texto
-
-        return f"{texto}{suffix}"
-
-    except Exception:
-
-        return "—"
-
-
-def formatear_tesis_ia(texto):
-
-    """
-    Limpia y formatea la tesis generada por IA.
-    """
-
-    if not isinstance(texto, str):
-        return "Sin análisis disponible."
-
-    texto = texto.strip()
-
-    if not texto:
-        return "Sin análisis disponible."
-
-    texto = texto.replace(
-        "Análisis técnico de",
-        ""
-    ).replace(
-        "Indicadores clave:",
-        ""
-    )
-
-    texto_html = re.sub(
-        r"\*\*(.*?)\*\*",
-        r"<strong>\1</strong>",
-        texto
-    )
-
-    texto_html = texto_html.replace(
-        "\n",
-        "<br>"
-    )
-
-    return texto_html.strip()
-
-
-# ============================================================
-# DATA PREPARATION
-# ============================================================
-
-def preparar_fecha(df):
-
-    df = df.copy()
-
-    if "Fecha" in df.columns:
-
-        df["Fecha"] = pd.to_datetime(
-            df["Fecha"],
-            errors="coerce"
-        )
-
-    return df
-
-
-def contar_estado(
-    df,
-    texto
-):
-
-    if "Estado" not in df.columns:
-        return 0
-
-    return int(
-        df["Estado"]
-        .astype(str)
-        .str.contains(
-            texto,
-            na=False,
-            regex=False
-        )
-        .sum()
-    )
-
-
-def calcular_metricas(df):
-
-    if df.empty:
-
-        return {
-            "total_alertas": 0,
-            "exitos": 0,
-            "fallos": 0,
-            "activas": 0,
-            "win_rate": 0.0,
-        }
-
-    total_alertas = len(df)
-
-    exitos = contar_estado(
-        df,
-        "OBJETIVO_CUMPLIDO"
-    )
-
-    fallos = contar_estado(
-        df,
-        "STOP_SALTADO"
-    )
-
-    activas = contar_estado(
-        df,
-        "ACTIVA"
-    )
-
-    total_cerradas = (
-        exitos +
-        fallos
-    )
-
-    win_rate = (
-        exitos /
-        total_cerradas *
-        100
-        if total_cerradas
-        else 0
-    )
-
-    return {
-        "total_alertas": total_alertas,
-        "exitos": exitos,
-        "fallos": fallos,
-        "activas": activas,
-        "win_rate": win_rate,
-    }
-
-
-# ============================================================
-# BENEFICIO DE UNA POSICIÓN
-# ============================================================
-
-def calcular_pnl_posicion(
-    precio_actual,
-    precio_entrada,
-    capital=CAPITAL_POR_ALERTA
-):
-
-    """
-    Calcula el P&L no realizado de una posición basándose en 300€.
-    """
-
-    if (
-        precio_actual is None
-        or precio_entrada is None
-    ):
-        return None, None
-
-    try:
-
-        precio_actual = float(
-            precio_actual
-        )
-
-        precio_entrada = float(
-            precio_entrada
-        )
-
-        if precio_entrada <= 0:
-            return None, None
-
-        porcentaje = (
-            (
-                precio_actual -
-                precio_entrada
-            )
-            /
-            precio_entrada
-        ) * 100
-
-        beneficio = (
-            capital *
-            porcentaje /
-            100
-        )
-
-        return (
-            beneficio,
-            porcentaje
-        )
-
-    except Exception:
-
-        return None, None
 
 
 # ============================================================
@@ -3012,11 +2874,12 @@ if df_hist.empty:
 # NAVEGACIÓN
 # ============================================================
 
-tab_cartera, tab_resultados, tab_historial = st.tabs(
+tab_cartera, tab_resultados, tab_historial, tab_planes = st.tabs(
     [
         "Cartera",
         "Resultados",
         "Histórico",
+        "Planes y Suscripción"
     ]
 )
 
@@ -3354,14 +3217,14 @@ with tab_cartera:
                     f"{formatear_numero(
                         porcentaje_posicion,
                         2,
-                        "%",
+                        '%',
                         True
                     )}"
                     f" · "
                     f"{formatear_numero(
                         beneficio_posicion,
                         2,
-                        " €",
+                        ' €',
                         True
                     )}"
                 )
@@ -3637,14 +3500,13 @@ with tab_cartera:
             # TESIS IA
             # ------------------------------------------------
 
-            analisis_ia = (
-                formatear_tesis_ia(
-                    row.get(
-                        "Analisis_IA",
-                        ""
-                    )
-                )
-            )
+            analisis_ia_raw = row.get("Analisis_IA_Actual", "")
+            if pd.isna(analisis_ia_raw) or not str(analisis_ia_raw).strip():
+                analisis_ia_raw = row.get("Analisis_IA_Entrada", "")
+            if pd.isna(analisis_ia_raw) or not str(analisis_ia_raw).strip():
+                analisis_ia_raw = row.get("Analisis_IA", "")
+
+            analisis_ia = formatear_tesis_ia(analisis_ia_raw)
 
 
             # ------------------------------------------------
@@ -4301,6 +4163,70 @@ with tab_historial:
 """,
             unsafe_allow_html=True,
         )
+
+
+# ============================================================
+# 4. PLANES Y SUSCRIPCIÓN (GOOGLE SHEETS)
+# ============================================================
+
+with tab_planes:
+
+    render_html(
+        """
+<div class="section-header">
+    <div>
+        <div class="section-title">Planes y Comunidad</div>
+        <div class="section-subtitle">Únete a nuestros planes cuantitativos y sincroniza tu acceso con Alura Strategy.</div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Plan Gratuito (Free)")
+        st.markdown("""
+        * Alertas con score moderado.
+        * Resumen de mercado básico.
+        * Acceso a informes públicos.
+        """)
+        
+        email_free = st.text_input("Tu correo electrónico:", key="input_free")
+        if st.button("Unirme Gratis"):
+            if "@" in email_free and "." in email_free:
+                resultado = guardar_suscriptor_cloud(email_free, tipo="free")
+                if resultado == "success":
+                    st.success("¡Te has registrado con éxito en el plan gratuito!")
+                elif resultado == "exists":
+                    st.warning("Este correo ya se encuentra registrado.")
+                else:
+                    st.error("Hubo un error al procesar el registro con Google Sheets.")
+            else:
+                    st.error("Introduce un correo electrónico válido.")
+
+    with col2:
+        st.subheader("Plan Premium (VIP)")
+        st.markdown("""
+        * **Alertas exclusivas con Score > 80**.
+        * Envío prioritario en tiempo real.
+        * Informe semanal cuantitativo completo.
+        * Acceso al histórico de tesis detalladas.
+        """)
+        
+        url_stripe = "https://buy.stripe.com/tu_enlace_de_pago_real"
+        
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="{url_stripe}" target="_blank">
+                <button style="background-color: #00e676; color: black; padding: 12px 24px; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer;">
+                    Suscribirse a VIP (19€/mes)
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption("Pago seguro gestionado mediante Stripe.")
 
 
 # ============================================================

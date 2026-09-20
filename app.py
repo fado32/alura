@@ -6,6 +6,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 import yfinance as yf
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 
 # ============================================================
@@ -17,6 +19,45 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+
+# ============================================================
+# CONFIGURACIÓN DE GOOGLE SHEETS
+# ============================================================
+
+def conectar_google_sheets(nombre_pestana):
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    try:
+        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        client = gspread.authorize(creds)
+        sheet = client.open("Alura_DB").worksheet(nombre_pestana)
+        return sheet
+    except Exception as e:
+        print(f"Error conectando a Google Sheets: {e}")
+        return None
+
+def guardar_suscriptor_cloud(email, tipo="free"):
+    try:
+        pestana = "free" if tipo == "free" else "vip"
+        sheet = conectar_google_sheets(pestana)
+        if sheet is None:
+            return "error"
+        
+        registros = sheet.get_all_records()
+        df = pd.DataFrame(registros)
+        
+        if not df.empty and 'email' in df.columns and email in df['email'].values:
+            return "exists"
+        
+        fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sheet.append_row([email, fecha_actual])
+        return "success"
+    except Exception as e:
+        print(f"Error guardando suscriptor: {e}")
+        return "error"
 
 
 # ============================================================
@@ -2833,11 +2874,12 @@ if df_hist.empty:
 # NAVEGACIÓN
 # ============================================================
 
-tab_cartera, tab_resultados, tab_historial = st.tabs(
+tab_cartera, tab_resultados, tab_historial, tab_planes = st.tabs(
     [
         "Cartera",
         "Resultados",
         "Histórico",
+        "Planes y Suscripción"
     ]
 )
 
@@ -3175,14 +3217,14 @@ with tab_cartera:
                     f"{formatear_numero(
                         porcentaje_posicion,
                         2,
-                        "%",
+                        '%',
                         True
                     )}"
                     f" · "
                     f"{formatear_numero(
                         beneficio_posicion,
                         2,
-                        " €",
+                        ' €',
                         True
                     )}"
                 )
@@ -4121,6 +4163,70 @@ with tab_historial:
 """,
             unsafe_allow_html=True,
         )
+
+
+# ============================================================
+# 4. PLANES Y SUSCRIPCIÓN (GOOGLE SHEETS)
+# ============================================================
+
+with tab_planes:
+
+    render_html(
+        """
+<div class="section-header">
+    <div>
+        <div class="section-title">Planes y Comunidad</div>
+        <div class="section-subtitle">Únete a nuestros planes cuantitativos y sincroniza tu acceso con Alura Strategy.</div>
+    </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Plan Gratuito (Free)")
+        st.markdown("""
+        * Alertas con score moderado.
+        * Resumen de mercado básico.
+        * Acceso a informes públicos.
+        """)
+        
+        email_free = st.text_input("Tu correo electrónico:", key="input_free")
+        if st.button("Unirme Gratis"):
+            if "@" in email_free and "." in email_free:
+                resultado = guardar_suscriptor_cloud(email_free, tipo="free")
+                if resultado == "success":
+                    st.success("¡Te has registrado con éxito en el plan gratuito!")
+                elif resultado == "exists":
+                    st.warning("Este correo ya se encuentra registrado.")
+                else:
+                    st.error("Hubo un error al procesar el registro con Google Sheets.")
+            else:
+                    st.error("Introduce un correo electrónico válido.")
+
+    with col2:
+        st.subheader("Plan Premium (VIP)")
+        st.markdown("""
+        * **Alertas exclusivas con Score > 80**.
+        * Envío prioritario en tiempo real.
+        * Informe semanal cuantitativo completo.
+        * Acceso al histórico de tesis detalladas.
+        """)
+        
+        url_stripe = "https://buy.stripe.com/tu_enlace_de_pago_real"
+        
+        st.markdown(f"""
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="{url_stripe}" target="_blank">
+                <button style="background-color: #00e676; color: black; padding: 12px 24px; border: none; border-radius: 8px; font-weight: bold; font-size: 16px; cursor: pointer;">
+                    Suscribirse a VIP (19€/mes)
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption("Pago seguro gestionado mediante Stripe.")
 
 
 # ============================================================
