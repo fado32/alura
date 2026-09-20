@@ -174,270 +174,30 @@ def obtener_precio_actual(ticker):
 # ============================================================
 
 def obtener_precios_activos(df):
-
     """
-    Obtiene una única vez el precio actual de cada ticker
-    activo.
+    Usa primero Precio_Actual persistido por bot.py.
+    Solo consulta Yahoo como fallback cuando el CSV no tiene precio.
+    Así la web no inventa una actualización durante fines de semana/festivos.
     """
-
     precios = {}
-
     if df.empty or "Ticker" not in df.columns:
         return precios
 
-    tickers = (
-        df["Ticker"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .unique()
-        .tolist()
-    )
-
-    for ticker in tickers:
-
+    for _, row in df.iterrows():
+        ticker = str(row.get("Ticker", "")).strip()
         if not ticker:
             continue
 
-        precios[ticker] = obtener_precio_actual(
-            ticker
-        )
+        precio_csv = safe_float(row.get("Precio_Actual"))
+        if precio_csv is not None:
+            precios[ticker] = precio_csv
+            continue
+
+        precio = obtener_precio_actual(ticker)
+        if precio is not None:
+            precios[ticker] = precio
 
     return precios
-
-
-# ============================================================
-# FORMATEADORES
-# ============================================================
-
-def formatear_numero(
-    value,
-    decimals=2,
-    suffix="",
-    signo=False
-):
-    """
-    Formatea números en formato español:
-
-        1234.56  -> 1.234,56
-        1234.56  -> +1.234,56 si signo=True
-        -1234.56 -> -1.234,56
-
-    Los cálculos internos siguen utilizando float.
-    """
-
-    if value is None:
-        return "—"
-
-    try:
-
-        numero = float(value)
-
-        texto = f"{numero:,.{decimals}f}"
-
-        # Conversión de formato anglosajón:
-        # 1,234.56
-        #
-        # a formato español:
-        # 1.234,56
-        texto = (
-            texto
-            .replace(",", "TEMP")
-            .replace(".", ",")
-            .replace("TEMP", ".")
-        )
-
-        if signo and numero > 0:
-            texto = "+" + texto
-
-        return f"{texto}{suffix}"
-
-    except Exception:
-
-        return "—"
-
-
-def formatear_tesis_ia(texto):
-
-    """
-    Limpia y formatea la tesis generada por IA.
-    """
-
-    if not isinstance(texto, str):
-        return "Sin análisis disponible."
-
-    texto = texto.strip()
-
-    if not texto:
-        return "Sin análisis disponible."
-
-    texto = texto.replace(
-        "Análisis técnico de",
-        ""
-    ).replace(
-        "Indicadores clave:",
-        ""
-    )
-
-    texto_html = re.sub(
-        r"\*\*(.*?)\*\*",
-        r"<strong>\1</strong>",
-        texto
-    )
-
-    texto_html = texto_html.replace(
-        "\n",
-        "<br>"
-    )
-
-    return texto_html.strip()
-
-
-# ============================================================
-# DATA PREPARATION
-# ============================================================
-
-def preparar_fecha(df):
-
-    df = df.copy()
-
-    if "Fecha" in df.columns:
-
-        df["Fecha"] = pd.to_datetime(
-            df["Fecha"],
-            errors="coerce"
-        )
-
-    return df
-
-
-def contar_estado(
-    df,
-    texto
-):
-
-    if "Estado" not in df.columns:
-        return 0
-
-    return int(
-        df["Estado"]
-        .astype(str)
-        .str.contains(
-            texto,
-            na=False,
-            regex=False
-        )
-        .sum()
-    )
-
-
-def calcular_metricas(df):
-
-    if df.empty:
-
-        return {
-            "total_alertas": 0,
-            "exitos": 0,
-            "fallos": 0,
-            "activas": 0,
-            "win_rate": 0.0,
-        }
-
-    total_alertas = len(df)
-
-    exitos = contar_estado(
-        df,
-        "OBJETIVO_CUMPLIDO"
-    )
-
-    fallos = contar_estado(
-        df,
-        "STOP_SALTADO"
-    )
-
-    activas = contar_estado(
-        df,
-        "ACTIVA"
-    )
-
-    total_cerradas = (
-        exitos +
-        fallos
-    )
-
-    win_rate = (
-        exitos /
-        total_cerradas *
-        100
-        if total_cerradas
-        else 0
-    )
-
-    return {
-        "total_alertas": total_alertas,
-        "exitos": exitos,
-        "fallos": fallos,
-        "activas": activas,
-        "win_rate": win_rate,
-    }
-
-
-# ============================================================
-# BENEFICIO DE UNA POSICIÓN
-# ============================================================
-
-def calcular_pnl_posicion(
-    precio_actual,
-    precio_entrada,
-    capital=CAPITAL_POR_ALERTA
-):
-
-    """
-    Calcula el P&L no realizado de una posición basándose en 300€.
-    """
-
-    if (
-        precio_actual is None
-        or precio_entrada is None
-    ):
-        return None, None
-
-    try:
-
-        precio_actual = float(
-            precio_actual
-        )
-
-        precio_entrada = float(
-            precio_entrada
-        )
-
-        if precio_entrada <= 0:
-            return None, None
-
-        porcentaje = (
-            (
-                precio_actual -
-                precio_entrada
-            )
-            /
-            precio_entrada
-        ) * 100
-
-        beneficio = (
-            capital *
-            porcentaje /
-            100
-        )
-
-        return (
-            beneficio,
-            porcentaje
-        )
-
-    except Exception:
-
-        return None, None
 
 
 # ============================================================
@@ -3637,14 +3397,13 @@ with tab_cartera:
             # TESIS IA
             # ------------------------------------------------
 
-            analisis_ia = (
-                formatear_tesis_ia(
-                    row.get(
-                        "Analisis_IA",
-                        ""
-                    )
-                )
-            )
+            analisis_ia_raw = row.get("Analisis_IA_Actual", "")
+            if pd.isna(analisis_ia_raw) or not str(analisis_ia_raw).strip():
+                analisis_ia_raw = row.get("Analisis_IA_Entrada", "")
+            if pd.isna(analisis_ia_raw) or not str(analisis_ia_raw).strip():
+                analisis_ia_raw = row.get("Analisis_IA", "")
+
+            analisis_ia = formatear_tesis_ia(analisis_ia_raw)
 
 
             # ------------------------------------------------
