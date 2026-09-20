@@ -809,6 +809,11 @@ html {
 
 }
 
+/* Ocultar barra superior y menú desplegable de Streamlit */
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+
 #MainMenu,
 footer,
 section[data-testid="stSidebar"] {
