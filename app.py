@@ -136,15 +136,23 @@ def preparar_fecha(df):
 
 
 def formatear_numero(valor, decimales=2, sufijo="", signo=False):
-    """Formatea un número de forma segura para la interfaz."""
+    """Formatea un número con separador de miles (.) y decimal (,) para España."""
     if valor is None or pd.isna(valor):
         return "—"
     try:
         valor = float(valor)
     except (TypeError, ValueError):
         return "—"
+    
     prefijo = "+" if signo and valor > 0 else ("−" if signo and valor < 0 else "")
-    return f"{prefijo}{abs(valor):,.{decimales}f}{sufijo}"
+    
+    # Formateo estándar en formato inglés para extraer partes
+    num_str = f"{abs(valor):,.{decimales}f}"
+    
+    # Reemplazos para notación española: comas de miles por puntos, punto decimal por coma
+    num_str = num_str.replace(",", "X").replace(".", ",").replace("X", ".")
+    
+    return f"{prefijo}{num_str}{sufijo}"
 
 
 def calcular_pnl_posicion(precio_actual, precio_entrada, capital=300.0):
@@ -939,6 +947,9 @@ div[data-testid="stStatusWidget"] {
     margin-bottom:
         25px;
 
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
 }
 
 .hero-title {
@@ -977,6 +988,20 @@ div[data-testid="stStatusWidget"] {
     font-size:
         13px;
 
+}
+
+.update-badge {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    box-shadow: var(--shadow);
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 
@@ -2719,6 +2744,28 @@ color_resultado = (
 
 
 # ============================================================
+# OBTENER FECHA DE ÚLTIMA ACTUALIZACIÓN DEL SISTEMA
+# ============================================================
+
+def obtener_fecha_ultima_actualizacion(df):
+    """Obtiene la fecha más reciente del historial o del archivo local."""
+    try:
+        if not df.empty and "Fecha" in df.columns:
+            max_fecha = df["Fecha"].max()
+            if pd.notna(max_fecha):
+                return pd.to_datetime(max_fecha).strftime("%d/%m/%Y %H:%M")
+        
+        if os.path.exists(ARCHIVO_HISTORIAL):
+            mtime = os.path.getmtime(ARCHIVO_HISTORIAL)
+            return datetime.fromtimestamp(mtime).strftime("%d/%m/%Y %H:%M")
+    except Exception:
+        pass
+    return datetime.now().strftime("%d/%m/%Y %H:%M")
+
+fecha_actualizacion_sistema = obtener_fecha_ultima_actualizacion(df_hist)
+
+
+# ============================================================
 # ANCLA SUPERIOR
 # ============================================================
 
@@ -2735,17 +2782,20 @@ render_html(
 # ============================================================
 
 render_html(
-    """
+    f"""
 <div class="hero">
-
-    <h1 class="hero-title">
-        Tu radar de inversión
-    </h1>
-
-    <div class="hero-subtitle">
-        Señales cuantitativas, cartera y resultados en un solo lugar.
+    <div>
+        <h1 class="hero-title">
+            Tu radar de inversión
+        </h1>
+        <div class="hero-subtitle">
+            Señales cuantitativas, cartera y resultados en un solo lugar.
+        </div>
     </div>
-
+    <div class="update-badge">
+        <span>🔄 Última actualización:</span>
+        <strong style="color: var(--text);">{fecha_actualizacion_sistema}</strong>
+    </div>
 </div>
 """,
     unsafe_allow_html=True,

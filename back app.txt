@@ -809,6 +809,11 @@ html {
 
 }
 
+/* Ocultar barra superior y menú desplegable de Streamlit */
+header[data-testid="stHeader"] {
+    display: none !important;
+}
+
 #MainMenu,
 footer,
 section[data-testid="stSidebar"] {
@@ -816,6 +821,11 @@ section[data-testid="stSidebar"] {
     display:
         none !important;
 
+}
+
+/* Ocultar widget inferior derecho (GitHub / Streamlit branding) */
+div[data-testid="stStatusWidget"] {
+    display: none !important;
 }
 
 .block-container {
