@@ -1,5 +1,5 @@
 # ============================================================
-# ALURA QUANT V4.3
+# ALURA QUANT V4.3.1
 # ============================================================
 #
 # ARQUITECTURA
@@ -73,11 +73,44 @@ from openai import OpenAI
 
 TZ = ZoneInfo("Europe/Madrid")
 
+# Directorio del propio script. Así el bot encuentra siempre los CSV
+# aunque se ejecute desde otra carpeta (cron, Task Scheduler, IDE, etc.).
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 MODO_EJECUCION = "AUTO"
 # AUTO | 14 | 18
 
-ARCHIVO_HISTORIAL = "historial_alertas.csv"
-ARCHIVO_UNIVERSO = "universo_activos.csv"
+def _resolver_archivo(nombre_principal, patron_fallback):
+    """
+    Usa el nombre estándar si existe. Si no, permite trabajar con una
+    copia exportada/descargada con sufijos como '(1)'.
+    """
+    principal = os.path.join(BASE_DIR, nombre_principal)
+
+    if os.path.exists(principal):
+        return principal
+
+    candidatos = sorted(
+        [
+            os.path.join(BASE_DIR, nombre)
+            for nombre in os.listdir(BASE_DIR)
+            if nombre.startswith(patron_fallback)
+            and nombre.lower().endswith(".csv")
+        ]
+    )
+
+    return candidatos[0] if candidatos else principal
+
+
+ARCHIVO_HISTORIAL = _resolver_archivo(
+    "historial_alertas.csv",
+    "historial_alertas"
+)
+
+ARCHIVO_UNIVERSO = _resolver_archivo(
+    "universo_activos.csv",
+    "universo_activos"
+)
 
 CAPITAL = 100000.0
 
@@ -116,12 +149,14 @@ PERIODO_AUDITORIA = "5y"
 # IA LOCAL
 # ============================================================
 
-client = OpenAI(
-    base_url="http://localhost:11434/v1",
-    api_key="ollama"
-)
-
 MODELO_LOCAL = "llama3.2"
+
+def cliente_ia():
+    """Crea el cliente solo cuando realmente se necesita."""
+    return OpenAI(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
+    )
 
 
 # ============================================================
@@ -616,6 +651,33 @@ def validar_datos_mercado(
 
 
 # ============================================================
+# ESCRITURA SEGURA DEL HISTORIAL
+# ============================================================
+
+def guardar_csv_seguro(df, ruta):
+    """
+    Escribe primero en un archivo temporal y después reemplaza
+    el CSV original. Evita dejar historial_alertas.csv corrupto
+    si el proceso se interrumpe durante la escritura.
+    """
+    ruta = os.path.abspath(ruta)
+    directorio = os.path.dirname(ruta) or "."
+    os.makedirs(directorio, exist_ok=True)
+
+    temporal = ruta + ".tmp"
+
+    try:
+        df.to_csv(temporal, index=False, encoding="utf-8-sig")
+        os.replace(temporal, ruta)
+    finally:
+        if os.path.exists(temporal):
+            try:
+                os.remove(temporal)
+            except OSError:
+                pass
+
+
+# ============================================================
 # DESCARGA ROBUSTA YAHOO
 # ============================================================
 
@@ -623,114 +685,103 @@ def descargar_historico_ticker(
     ticker,
     period=PERIODO_ACTUAL
 ):
-
     """
-    DESCARGA PRINCIPAL.
+    Descarga el histórico disponible para un ticker.
 
-    IMPORTANTE:
+    Estrategia:
+    1. yf.download()
+    2. Si falla, Ticker.history()
+    3. Reintentos entre ambas vías.
 
-    NO se utilizan:
-
-        start=
-        end=
-
-    Por tanto no existe ninguna posibilidad de pedir:
-
-        2026-09-20 -> 2026-09-20
-
-    o:
-
-        2026-09-20 -> 2026-09-19
-
-    Yahoo devuelve el histórico disponible dentro del periodo
-    solicitado y nosotros seleccionamos la última vela real.
-
-    Estados:
-
-        OK
-        SIN_DATOS
-        ERROR_YAHOO
+    No utiliza start/end, evitando errores de rango temporal.
     """
 
     ultimo_error = None
 
-    for intento in range(
-        1,
-        MAX_REINTENTOS_YAHOO + 1
-    ):
-
+    for intento in range(1, MAX_REINTENTOS_YAHOO + 1):
+        # --------------------------------------------------------
+        # VÍA 1: yf.download
+        # --------------------------------------------------------
         try:
-
             datos = yf.download(
-
                 ticker,
-
                 period=period,
-
                 interval="1d",
-
                 auto_adjust=True,
-
+                actions=False,
                 progress=False,
-
                 threads=False,
-
                 group_by="column",
-
-                timeout=20
+                timeout=30,
             )
 
-            valido, resultado = (
-                validar_datos_mercado(
-                    datos
-                )
-            )
+            valido, resultado = validar_datos_mercado(datos)
 
             if valido:
+                return resultado, "OK"
 
-                return (
-                    resultado,
-                    "OK"
+            ultimo_error = resultado
+
+        except TypeError:
+            # Compatibilidad con versiones antiguas de yfinance
+            # que no acepten alguno de los argumentos anteriores.
+            try:
+                datos = yf.download(
+                    ticker,
+                    period=period,
+                    interval="1d",
+                    auto_adjust=True,
+                    progress=False,
+                    threads=False,
                 )
+
+                valido, resultado = validar_datos_mercado(datos)
+
+                if valido:
+                    return resultado, "OK"
+
+                ultimo_error = resultado
+
+            except Exception as e:
+                ultimo_error = str(e)
+
+        except Exception as e:
+            ultimo_error = str(e)
+
+        # --------------------------------------------------------
+        # VÍA 2: Ticker.history como fallback
+        # --------------------------------------------------------
+        try:
+            datos = yf.Ticker(ticker).history(
+                period=period,
+                interval="1d",
+                auto_adjust=True,
+                actions=False,
+            )
+
+            valido, resultado = validar_datos_mercado(datos)
+
+            if valido:
+                return resultado, "OK"
 
             ultimo_error = resultado
 
         except Exception as e:
-
             ultimo_error = str(e)
 
         if intento < MAX_REINTENTOS_YAHOO:
+            time.sleep(ESPERA_REINTENTO_YAHOO)
 
-            time.sleep(
-                ESPERA_REINTENTO_YAHOO
-            )
+    mensaje = str(ultimo_error or "error desconocido")
 
-    if ultimo_error:
+    if (
+        "empty" in mensaje.lower()
+        or "no price data" in mensaje.lower()
+        or "possibly delisted" in mensaje.lower()
+    ):
+        return None, "SIN_DATOS: " + mensaje
 
-        if (
-            "empty"
-            in ultimo_error.lower()
-            or
-            "no price data"
-            in ultimo_error.lower()
-        ):
-
-            return (
-                None,
-                "SIN_DATOS: "
-                + ultimo_error
-            )
-
-        return (
-            None,
-            "ERROR_YAHOO: "
-            + ultimo_error
-        )
-
-    return (
-        None,
-        "ERROR_YAHOO: error desconocido"
-    )
+    return None, "ERROR_YAHOO: " + mensaje
 
 
 # ============================================================
@@ -859,171 +910,168 @@ def descargar_lote(
     tickers,
     period=PERIODO_ACTUAL
 ):
-
     """
-    Descarga un lote sin start/end.
-
-    Si Yahoo falla con algunos tickers, NO se considera
-    que estén delisted.
+    Intenta una descarga por lotes. Si Yahoo no devuelve correctamente
+    el lote, hace fallback ticker por ticker para que un fallo puntual
+    no bloquee toda la actualización.
     """
 
     if not tickers:
-
         return {}
 
     resultado = {}
-
     ultimo_error = None
 
-    for intento in range(
-        1,
-        MAX_REINTENTOS_YAHOO + 1
-    ):
-
+    # ------------------------------------------------------------
+    # PRIMER INTENTO: lote completo
+    # ------------------------------------------------------------
+    for intento in range(1, MAX_REINTENTOS_YAHOO + 1):
         try:
-
             datos_lote = yf.download(
-
                 tickers,
-
                 period=period,
-
                 interval="1d",
-
                 auto_adjust=True,
-
+                actions=False,
                 group_by="ticker",
-
                 progress=False,
-
                 threads=True,
-
-                timeout=30
+                timeout=30,
             )
 
-            if (
-                datos_lote is None
-                or
-                datos_lote.empty
-            ):
+            if datos_lote is not None and not datos_lote.empty:
 
-                ultimo_error = (
-                    "Yahoo devolvió "
-                    "el lote vacío"
-                )
-
-            else:
-
-                # ------------------------------------------------
-                # UN SOLO TICKER
-                # ------------------------------------------------
-
+                # Un solo ticker
                 if len(tickers) == 1:
-
                     ticker = tickers[0]
-
-                    datos = norm(
-                        datos_lote
-                    )
-
-                    valido, datos_validos = (
-                        validar_datos_mercado(
-                            datos
-                        )
-                    )
+                    datos = norm(datos_lote)
+                    valido, datos_validos = validar_datos_mercado(datos)
 
                     if valido:
+                        return {ticker: (datos_validos, "OK")}
 
-                        resultado[ticker] = (
-                            datos_validos,
-                            "OK"
+                    ultimo_error = datos_validos
+
+                # Varios tickers
+                else:
+                    for ticker in tickers:
+                        try:
+                            datos = datos_lote[ticker]
+                            datos = norm(datos)
+
+                            valido, datos_validos = validar_datos_mercado(datos)
+
+                            if valido:
+                                resultado[ticker] = (datos_validos, "OK")
+                            else:
+                                resultado[ticker] = (None, datos_validos)
+
+                        except Exception as e:
+                            resultado[ticker] = (
+                                None,
+                                "ERROR_EXTRACCION: " + str(e)
+                            )
+
+                    # Si al menos un ticker funcionó, conservamos los
+                    # resultados y hacemos fallback solo de los que faltan.
+                    faltantes = [
+                        t for t in tickers
+                        if resultado.get(t, (None, ""))[0] is None
+                    ]
+
+                    if not faltantes:
+                        return resultado
+
+                    for ticker in faltantes:
+                        datos, estado = descargar_historico_ticker(
+                            ticker,
+                            period=period
                         )
-
-                    else:
-
-                        resultado[ticker] = (
-                            None,
-                            datos_validos
-                        )
+                        resultado[ticker] = (datos, estado)
 
                     return resultado
 
-                # ------------------------------------------------
-                # VARIOS TICKERS
-                # ------------------------------------------------
+            else:
+                ultimo_error = "Yahoo devolvió el lote vacío"
 
-                for ticker in tickers:
+        except TypeError:
+            # Compatibilidad con versiones antiguas de yfinance.
+            try:
+                datos_lote = yf.download(
+                    tickers,
+                    period=period,
+                    interval="1d",
+                    auto_adjust=True,
+                    group_by="ticker",
+                    progress=False,
+                    threads=True,
+                )
 
-                    try:
-
-                        datos = (
-                            datos_lote[
-                                ticker
-                            ]
-                        )
-
-                        datos = norm(
-                            datos
-                        )
-
-                        valido, datos_validos = (
-                            validar_datos_mercado(
-                                datos
-                            )
-                        )
-
+                if datos_lote is not None and not datos_lote.empty:
+                    if len(tickers) == 1:
+                        ticker = tickers[0]
+                        datos = norm(datos_lote)
+                        valido, datos_validos = validar_datos_mercado(datos)
                         if valido:
+                            return {ticker: (datos_validos, "OK")}
+                        ultimo_error = datos_validos
+                    else:
+                        for ticker in tickers:
+                            try:
+                                datos = norm(datos_lote[ticker])
+                                valido, datos_validos = validar_datos_mercado(datos)
+                                resultado[ticker] = (
+                                    (datos_validos, "OK")
+                                    if valido
+                                    else (None, datos_validos)
+                                )
+                            except Exception as e:
+                                resultado[ticker] = (
+                                    None,
+                                    "ERROR_EXTRACCION: " + str(e)
+                                )
 
-                            resultado[ticker] = (
-                                datos_validos,
-                                "OK"
+                        faltantes = [
+                            t for t in tickers
+                            if resultado.get(t, (None, ""))[0] is None
+                        ]
+
+                        for ticker in faltantes:
+                            datos, estado = descargar_historico_ticker(
+                                ticker,
+                                period=period
                             )
+                            resultado[ticker] = (datos, estado)
 
-                        else:
+                        return resultado
 
-                            resultado[ticker] = (
-                                None,
-                                datos_validos
-                            )
-
-                    except Exception as e:
-
-                        resultado[ticker] = (
-
-                            None,
-
-                            "ERROR_EXTRACCION: "
-                            + str(e)
-                        )
-
-                return resultado
+            except Exception as e:
+                ultimo_error = str(e)
 
         except Exception as e:
-
             ultimo_error = str(e)
 
         if intento < MAX_REINTENTOS_YAHOO:
+            time.sleep(ESPERA_REINTENTO_YAHOO)
 
-            time.sleep(
-                ESPERA_REINTENTO_YAHOO
-            )
-
-    # --------------------------------------------------------
-    # SI TODO EL LOTE FALLA
-    # --------------------------------------------------------
-
+    # ------------------------------------------------------------
+    # FALLBACK FINAL: ticker por ticker
+    # ------------------------------------------------------------
     for ticker in tickers:
+        if ticker in resultado and resultado[ticker][0] is not None:
+            continue
+
+        datos, estado = descargar_historico_ticker(
+            ticker,
+            period=period
+        )
 
         resultado[ticker] = (
-
-            None,
-
-            "ERROR_YAHOO: "
-            +
-            str(
-                ultimo_error
-                or
-                "error desconocido"
+            datos,
+            estado if datos is not None else (
+                "ERROR_YAHOO: " + str(
+                    ultimo_error or estado or "error desconocido"
+                )
             )
         )
 
@@ -1788,7 +1836,7 @@ R:R:
 {RR_TARGET}
 """
 
-        respuesta = client.chat.completions.create(
+        respuesta = cliente_ia().chat.completions.create(
 
             model=MODELO_LOCAL,
 
@@ -2468,10 +2516,13 @@ def cargar_historial():
 
         for col in CAMPOS_NUMERICOS:
 
+            # Todos los campos numéricos se fuerzan a float64.
+            # Esto evita errores de pandas al actualizar una columna que
+            # fue inferida como int64 con un valor decimal (ej. 0.81).
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
-            )
+            ).astype("float64")
 
         return df
 
@@ -2911,7 +2962,7 @@ Prioriza los cambios relevantes frente a repetir
 simplemente los datos.
 """
 
-        respuesta = client.chat.completions.create(
+        respuesta = cliente_ia().chat.completions.create(
 
             model=MODELO_LOCAL,
 
@@ -3199,9 +3250,9 @@ def guardar(
         columns=CAMPOS_HISTORIAL
     )
 
-    df.to_csv(
-        ARCHIVO_HISTORIAL,
-        index=False
+    guardar_csv_seguro(
+        df,
+        ARCHIVO_HISTORIAL
     )
 
 
@@ -3292,12 +3343,22 @@ def bloqueados():
 
 def normalizar_fecha_mercado(valor):
     """Devuelve YYYY-MM-DD para comparar sesiones reales de mercado."""
-    if valor is None or str(valor).strip() == "":
+    if valor is None or str(valor).strip() in ("", "nan", "NaT"):
         return ""
+
     try:
-        return pd.Timestamp(valor).strftime("%Y-%m-%d")
+        ts = pd.Timestamp(valor)
+
+        if pd.isna(ts):
+            return ""
+
+        # Si Yahoo entrega timestamp con zona horaria, solo nos interesa
+        # la fecha de la sesión, no la hora de ejecución.
+        return ts.strftime("%Y-%m-%d")
+
     except Exception:
-        return str(valor).strip()[:10]
+        texto = str(valor).strip()
+        return texto[:10] if len(texto) >= 10 else texto
 
 
 def actualizar_alertas_activas():
@@ -3709,10 +3770,13 @@ def auditar():
 
         for col in CAMPOS_NUMERICOS:
 
+            # Todos los campos numéricos se fuerzan a float64.
+            # Esto evita errores de pandas al actualizar una columna que
+            # fue inferida como int64 con un valor decimal (ej. 0.81).
             df[col] = pd.to_numeric(
                 df[col],
                 errors="coerce"
-            )
+            ).astype("float64")
 
         df = df.reindex(
             columns=CAMPOS_HISTORIAL
@@ -3769,12 +3833,18 @@ def auditar():
 def git():
 
     try:
+        # Git debe ejecutarse sobre el repositorio del bot, no sobre
+        # la carpeta desde la que se lanzó Python.
+        repo_dir = BASE_DIR
 
         subprocess.run(
             [
                 "git",
+                "-C",
+                repo_dir,
                 "add",
-                "."
+                "bot.py",
+                os.path.basename(ARCHIVO_HISTORIAL),
             ],
             check=True
         )
@@ -3783,6 +3853,8 @@ def git():
 
             [
                 "git",
+                "-C",
+                repo_dir,
                 "status",
                 "--porcelain"
             ],
@@ -3798,6 +3870,8 @@ def git():
 
                 [
                     "git",
+                    "-C",
+                    repo_dir,
                     "commit",
                     "-m",
                     "Alura Quant V4.3 "
@@ -3813,6 +3887,8 @@ def git():
 
                     [
                         "git",
+                        "-C",
+                        repo_dir,
                         "push",
                         "origin",
                         "main"
@@ -3857,7 +3933,7 @@ def main():
     print(
         "\n"
         "============================================================\n"
-        "ALURA QUANT V4.3\n"
+        "ALURA QUANT V4.3.1\n"
         "============================================================"
     )
 
